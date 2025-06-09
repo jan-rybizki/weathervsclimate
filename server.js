@@ -9,72 +9,67 @@ app.use((req, res, next) => {
   next();
 });
 
-// Endpoint to get station ID by station name
-app.get('/station-id', (req, res) => {
+// ==== HIER KOMMT DER NEUE KOMBINIERTE ENDPOINT ==== //
+app.get('/station', (req, res) => {
   const stationName = req.query.name;
-  if (!stationName) {
-    return res.status(400).json({ error: 'Missing station name' });
-  }
+  const stationId = req.query.id;
+  const includeTemperature = req.query.includeTemperature === 'true';
 
   fs.readFile('data/Temperatur_1961-1990_Stationsliste.txt', 'utf8', (err, data) => {
-    if (err) return res.status(500).json({ error: 'Could not read data file.' });
+    if (err) return res.status(500).json({ error: 'Could not read stations file.' });
 
     const lines = data.split('\n');
     let found = null;
     for (const line of lines) {
-      if (!line.trim() || line.startsWith("Stations_id")) continue; // Skip empty and header lines
-      // Split line by semicolon and trim each field
+      if (!line.trim() || line.startsWith("Stations_id")) continue;
       const cols = line.split(';').map(col => col.trim());
-      // Find station name in the proper column (column 2, index 1)
-      if (cols[1] && cols[1].toLowerCase() === stationName.toLowerCase()) {
-        found = cols;
+      if (
+        (stationName && cols[1] && cols[1].toLowerCase() === stationName.toLowerCase()) ||
+        (stationId && cols[0] && cols[0] === stationId)
+      ) {
+        found = {
+          id: cols[0],
+          name: cols[1],
+          breite: cols[2],
+          laenge: cols[3],
+          hoehe: cols[4],
+          bundesland: cols[5],
+        };
         break;
       }
     }
     if (!found) return res.status(404).json({ error: 'Station not found' });
 
-    // Station ID is the first column
-    res.json({ id: found[0], columns: found });
-  });
-});
-
-// New endpoint to get temperature data by station ID
-app.get('/temperature-data', (req, res) => {
-  const stationId = req.query.id;
-  if (!stationId) {
-    return res.status(400).json({ error: 'Missing station ID' });
-  }
-
-  fs.readFile('data/Temperatur_1961-1990.txt', 'utf8', (err, data) => {
-    if (err) return res.status(500).json({ error: 'Could not read temperature data file.' });
-
-    const lines = data.split('\n');
-    let headers = [];
-    let found = null;
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      // First non-empty line is header
-      if (headers.length === 0 && line.includes("Stations_id")) {
-        headers = line.split(';').map(h => h.trim());
-        continue;
-      }
-      const cols = line.split(';').map(col => col.trim());
-      if (cols[0] === stationId.trim()) {
-        found = cols;
-        break;
-      }
+    if (includeTemperature) {
+      fs.readFile('data/Temperatur_1961-1990.txt', 'utf8', (err, tdata) => {
+        if (err) return res.status(500).json({ error: 'Could not read temperature data file.' });
+        const tlines = tdata.split('\n');
+        let theaders = [];
+        let tfound = null;
+        for (const line of tlines) {
+          if (!line.trim()) continue;
+          if (theaders.length === 0 && line.includes("Stations_id")) {
+            theaders = line.split(';').map(h => h.trim());
+            continue;
+          }
+          const cols = line.split(';').map(col => col.trim());
+          if (cols[0] === found.id) {
+            tfound = {};
+            theaders.forEach((header, i) => {
+              tfound[header] = cols[i];
+            });
+            break;
+          }
+        }
+        found.temperatur = tfound;
+        res.json(found);
+      });
+    } else {
+      res.json(found);
     }
-    if (!found) return res.status(404).json({ error: 'Temperature data not found for this station ID' });
-
-    // Return as an object: { "Month": value }
-    let result = {};
-    headers.forEach((header, i) => {
-      result[header] = found[i];
-    });
-    res.json(result);
   });
 });
-
+// ==== ENDE DES NEUEN ENDPOINTS ==== //
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
 });

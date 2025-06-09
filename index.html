@@ -24,72 +24,77 @@
   <script>
     let chartInstance = null;
 
-    async function findTemperatureData() {
-      const name = document.getElementById('station-input').value.trim();
-      const resultDiv = document.getElementById('result');
-      resultDiv.innerHTML = '';
-      if (chartInstance) {
-        chartInstance.destroy();
-        chartInstance = null;
-      }
-      if (!name) {
-        resultDiv.innerHTML = "<p>Please enter a station name.</p>";
-        return;
-      }
-
-      try {
-        // 1. Query for station ID
-        const idResp = await fetch(`http://localhost:3000/station-id?name=${encodeURIComponent(name)}`);
-        const idData = await idResp.json();
-
-        if (idData.error) {
-          resultDiv.innerHTML = `<p style="color:red;">${idData.error}</p>`;
-          return;
-        }
-
-        // 2. Query for temperature data
-        const tempResp = await fetch(`http://localhost:3000/temperature-data?id=${encodeURIComponent(idData.id)}`);
-        const tempData = await tempResp.json();
-
-        if (tempData.error) {
-          resultDiv.innerHTML = `<p style="color:red;">${tempData.error}</p>`;
-          return;
-        }
-
-        // 3. Display Station Info
-        resultDiv.innerHTML = `<p><strong>Station:</strong> ${idData.columns[1]}<br><strong>ID:</strong> ${idData.id}</p>`;
-
-// 4. Prepare data for chart
-const monthNames = [
-  { display: "Jan.", variants: ["Jan."] },
-  { display: "Feb.", variants: ["Feb."] },
-  { display: "März", variants: ["März", "Marz", "M�rz"] }, // Include encoding variants
-  { display: "Apr.", variants: ["Apr."] },
-  { display: "Mai", variants: ["Mai"] },
-  { display: "Jun.", variants: ["Jun."] },
-  { display: "Jul.", variants: ["Jul."] },
-  { display: "Aug.", variants: ["Aug."] },
-  { display: "Sept.", variants: ["Sept."] },
-  { display: "Okt.", variants: ["Okt."] },
-  { display: "Nov.", variants: ["Nov."] },
-  { display: "Dez.", variants: ["Dez."] }
-];
-
-const keys = Object.keys(tempData);
-let months = [];
-let temps = [];
-monthNames.forEach(m => {
-  let match = m.variants.find(v =>
-    keys.some(k => k.trim().toLowerCase() === v.toLowerCase())
-  );
-  if (match) {
-    let key = keys.find(k => k.trim().toLowerCase() === match.toLowerCase());
-    if (tempData[key] && !isNaN(parseFloat(tempData[key].replace(',', '.')))) {
-      months.push(m.display);
-      temps.push(parseFloat(tempData[key].replace(',', '.')));
-    }
+async function findTemperatureData() {
+  const name = document.getElementById('station-input').value.trim();
+  const resultDiv = document.getElementById('result');
+  resultDiv.innerHTML = '';
+  if (chartInstance) {
+    chartInstance.destroy();
+    chartInstance = null;
   }
-});
+  if (!name) {
+    resultDiv.innerHTML = "<p>Please enter a station name.</p>";
+    return;
+  }
+
+  try {
+    // Hole alle Daten direkt!
+    const resp = await fetch(`http://localhost:3000/station?name=${encodeURIComponent(name)}&includeTemperature=true`);
+    const data = await resp.json();
+
+    if (data.error) {
+      resultDiv.innerHTML = `<p style="color:red;">${data.error}</p>`;
+      return;
+    }
+
+    // Zeige Station + Koordinaten an
+    resultDiv.innerHTML = `
+      <p>
+        <strong>Station:</strong> ${data.name}<br>
+        <strong>ID:</strong> ${data.id}<br>
+        <strong>Breite:</strong> ${data.breite}<br>
+        <strong>Länge:</strong> ${data.laenge}
+      </p>
+    `;
+
+    // Temperaturdaten extrahieren
+    const tempData = data.temperatur;
+    if (!tempData) {
+      resultDiv.innerHTML += "<p style='color:red;'>Keine Temperaturdaten gefunden.</p>";
+      return;
+    }
+
+    // -- Rest bleibt wie bei dir: Monatsnamen und Temperatur-Array --
+    const monthNames = [
+      { display: "Jan.", variants: ["Jan."] },
+      { display: "Feb.", variants: ["Feb."] },
+      { display: "März", variants: ["März", "Marz", "M�rz"] },
+      { display: "Apr.", variants: ["Apr."] },
+      { display: "Mai", variants: ["Mai"] },
+      { display: "Jun.", variants: ["Jun."] },
+      { display: "Jul.", variants: ["Jul."] },
+      { display: "Aug.", variants: ["Aug."] },
+      { display: "Sept.", variants: ["Sept."] },
+      { display: "Okt.", variants: ["Okt."] },
+      { display: "Nov.", variants: ["Nov."] },
+      { display: "Dez.", variants: ["Dez."] }
+    ];
+
+    const keys = Object.keys(tempData);
+    let months = [];
+    let temps = [];
+    monthNames.forEach(m => {
+      let match = m.variants.find(v =>
+        keys.some(k => k.trim().toLowerCase() === v.toLowerCase())
+      );
+      if (match) {
+        let key = keys.find(k => k.trim().toLowerCase() === match.toLowerCase());
+        if (tempData[key] && !isNaN(parseFloat(tempData[key].replace(',', '.')))) {
+          months.push(m.display);
+          temps.push(parseFloat(tempData[key].replace(',', '.')));
+        }
+      }
+    });
 
 // Add annual average ("Jahr") if present
 let yearKey = keys.find(k => k.trim().toLowerCase().startsWith('jahr'));
@@ -127,7 +132,7 @@ let yearValue = yearKey && tempData[yearKey] && !isNaN(parseFloat(tempData[yearK
               legend: { display: true },
               title: {
                 display: true,
-                text: `Monthly Temperatures for ${idData.columns[1]}`
+                text: `Monthly Temperatures for ${data.name}`
               }
             },
             scales: {
