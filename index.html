@@ -57,14 +57,14 @@ async function findTemperatureData() {
       </p>
     `;
 
-    // Temperaturdaten extrahieren
+    // Temperaturdaten aus den historischen Daten
     const tempData = data.temperatur;
     if (!tempData) {
       resultDiv.innerHTML += "<p style='color:red;'>Keine Temperaturdaten gefunden.</p>";
       return;
     }
 
-    // -- Rest bleibt wie bei dir: Monatsnamen und Temperatur-Array --
+    // Monatsnamen & Temperatur-Array (historisch)
     const monthNames = [
       { display: "Jan.", variants: ["Jan."] },
       { display: "Feb.", variants: ["Feb."] },
@@ -96,56 +96,70 @@ async function findTemperatureData() {
       }
     });
 
-// Add annual average ("Jahr") if present
-let yearKey = keys.find(k => k.trim().toLowerCase().startsWith('jahr'));
-let yearValue = yearKey && tempData[yearKey] && !isNaN(parseFloat(tempData[yearKey].replace(',', '.')))
-  ? parseFloat(tempData[yearKey].replace(',', '.'))
-  : null;
+    // --------- Open-Meteo-Daten für 2024 und 2023 holen ---------
+    const lat = data.breite;
+    const lon = data.laenge;
+    // New: fetch monthly means for 2023 and 2024
+    const om2024Resp = await fetch(`http://localhost:3000/openmeteo/monthly-avg?lat=${lat}&lon=${lon}&year=2024`);
+    const om2023Resp = await fetch(`http://localhost:3000/openmeteo/monthly-avg?lat=${lat}&lon=${lon}&year=2023`);
+    const om2024 = await om2024Resp.json();
+    const om2023 = await om2023Resp.json();
 
-        // 5. Draw chart
-        const ctx = document.getElementById('tempChart').getContext('2d');
-        chartInstance = new Chart(ctx, {
-          type: 'line',
-          data: {
-            labels: months,
-            datasets: [{
-              label: 'Mean Temperature (°C)',
-              data: temps,
-              borderColor: 'rgb(75, 192, 192)',
-              backgroundColor: 'rgba(75, 192, 192, 0.1)',
-              tension: 0.2
-            },
-            ...(yearValue !== null ? [{
-              label: 'Annual Mean',
-              data: Array(months.length-1).fill(null).concat([yearValue]),
-              borderColor: 'orange',
-              borderDash: [5,5],
-              pointBackgroundColor: 'orange',
-              fill: false,
-              showLine: false
-            }] : [])
-            ]
+
+    // --------- Diagramm zeichnen ---------
+    const ctx = document.getElementById('tempChart').getContext('2d');
+    chartInstance = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: months, // standard: historische Monatsnamen (Jan...Dez)
+        datasets: [
+          {
+            label: 'Klimanorm 1961-1990',
+            data: temps,
+            borderColor: 'rgb(75, 192, 192)',
+            backgroundColor: 'rgba(75, 192, 192, 0.1)',
+            tension: 0.2
           },
-          options: {
-            responsive: true,
-            plugins: {
-              legend: { display: true },
-              title: {
-                display: true,
-                text: `Monthly Temperatures for ${data.name}`
-              }
-            },
-            scales: {
-              y: {
-                title: { display: true, text: '°C' }
-              }
-            }
+          ...(om2023.monthlyMeans ? [{
+            label: '2023 (Open-Meteo)',
+            data: om2023.monthlyMeans,
+            borderColor: 'orange',
+            backgroundColor: 'rgba(255,180,80,0.05)',
+            tension: 0.2
+          }] : []),
+          ...(om2024.monthlyMeans ? [{
+            label: '2024 (Open-Meteo)',
+            data: om2024.monthlyMeans,
+            borderColor: 'red',
+            backgroundColor: 'rgba(255,0,0,0.05)',
+            tension: 0.2
+          }] : [])
+        ]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: true },
+          title: {
+            display: true,
+            text: `Monatsmittel-Temperaturen: ${data.name}`
           }
-        });
-      } catch (err) {
-        resultDiv.innerHTML = `<p style="color:red;">Error contacting server.</p>`;
+        },
+        scales: {
+          y: {
+            title: { display: true, text: '°C' }
+          }
+        }
       }
-    }
+    });
+
+
+  } catch (err) {
+    resultDiv.innerHTML = `<p style="color:red;">Error contacting server.</p>`;
+    console.error(err);
+  }
+}
+
   </script>
 </body>
 </html>

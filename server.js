@@ -69,6 +69,61 @@ app.get('/station', (req, res) => {
     }
   });
 });
+
+// If needed (Node < 18):
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+
+function dailyToMonthlyAverages(daily) {
+  const monthlySums = {};
+  const monthlyCounts = {};
+
+  daily.time.forEach((dateStr, i) => {
+    const month = dateStr.slice(0, 7); // "YYYY-MM"
+    const temp = daily.temperature_2m_mean[i];
+    if (!Number.isFinite(temp)) return;
+    if (!monthlySums[month]) {
+      monthlySums[month] = 0;
+      monthlyCounts[month] = 0;
+    }
+    monthlySums[month] += temp;
+    monthlyCounts[month] += 1;
+  });
+
+  const months = Object.keys(monthlySums).sort();
+  const monthlyMeans = months.map(month =>
+    monthlyCounts[month] > 0
+      ? +(monthlySums[month] / monthlyCounts[month]).toFixed(2)
+      : null
+  );
+  return { months, monthlyMeans };
+}
+
+app.get('/openmeteo/monthly-avg', async (req, res) => {
+  const { lat, lon, year } = req.query;
+  if (!lat || !lon || !year) {
+    return res.status(400).json({ error: 'lat, lon, year required' });
+  }
+  const start = `${year}-01-01`;
+  const end = `${year}-12-31`;
+  const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&start_date=${start}&end_date=${end}&daily=temperature_2m_mean&timezone=Europe%2FBerlin`;
+  try {
+    const response = await fetch(url);
+    const data = await response.json();
+    if (!data.daily || !data.daily.time || !data.daily.temperature_2m_mean) {
+      return res.status(404).json({ error: 'No daily data from Open-Meteo.' });
+    }
+    const { months, monthlyMeans } = dailyToMonthlyAverages(data.daily);
+    res.json({
+      year,
+      months, // Array: ["2023-01", ...]
+      monthlyMeans // Array: [meanJan, meanFeb, ...]
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Open-Meteo API error', detail: err.message });
+  }
+});
+
+
 // ==== ENDE DES NEUEN ENDPOINTS ==== //
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
