@@ -98,9 +98,16 @@
       return sums.map((s, i) => counts[i] ? Number((s / counts[i]).toFixed(2)) : null);
     }
 
-    async function fetchOpenMeteoYear(lat, lon, year) {
+    function toIsoDateUTC(d) {
+      const y = d.getUTCFullYear();
+      const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(d.getUTCDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
+    async function fetchOpenMeteoYear(lat, lon, year, maxEndDate) {
       const start = `${year}-01-01`;
-      const end = `${year}-12-31`;
+      const end = maxEndDate && maxEndDate < `${year}-12-31` ? maxEndDate : `${year}-12-31`;
       const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&start_date=${start}&end_date=${end}&daily=temperature_2m_mean&timezone=auto`;
       const r = await fetch(url);
       if (!r.ok) throw new Error(`Open-Meteo failed (${r.status})`);
@@ -135,10 +142,13 @@
         const now = new Date();
         const lastYear = now.getUTCFullYear() - 1;
         const currentYear = now.getUTCFullYear();
+        // Open-Meteo archive does not provide future dates.
+        const yesterdayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1));
+        const maxEndDate = toIsoDateUTC(yesterdayUtc);
 
         const [yLast, yCurrent] = await Promise.all([
-          fetchOpenMeteoYear(lat, lon, lastYear),
-          fetchOpenMeteoYear(lat, lon, currentYear)
+          fetchOpenMeteoYear(lat, lon, lastYear, maxEndDate),
+          fetchOpenMeteoYear(lat, lon, currentYear, maxEndDate)
         ]);
 
         const climMean = mean(climateSeries.values);
