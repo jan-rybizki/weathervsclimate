@@ -1,165 +1,171 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Find Station Temperature Data</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Weather vs Climate (GitHub Pages Ready)</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 2em; }
-    label, input { font-size: 1.2em; }
-    #result { margin-top: 2em; }
-    #chart-container { width: 90vw; max-width: 600px; }
+    body { font-family: Arial, sans-serif; margin: 2rem; max-width: 960px; }
+    .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+    input, button { font-size: 1rem; padding: .5rem; }
+    #result { margin-top: 1rem; }
+    #metrics { margin: 1rem 0; font-weight: 600; }
+    canvas { max-width: 900px; }
   </style>
-  <!-- Load Chart.js from CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-  <h1>Find Station Temperature Data</h1>
-  <label for="station-input">Station Name:</label>
-  <input type="text" id="station-input" placeholder="Enter station name..." />
-  <button onclick="findTemperatureData()">Search</button>
-  <div id="result"></div>
-  <div id="chart-container">
-    <canvas id="tempChart"></canvas>
+  <h1>Weather vs Climate</h1>
+  <p>Static browser app: compares Open-Meteo recent annual monthly means with 1961–1990 station climate norm from local data files.</p>
+
+  <div class="row">
+    <label for="station-input">Station name:</label>
+    <input id="station-input" type="text" placeholder="e.g. Potsdam" />
+    <button id="search-btn">Compare</button>
   </div>
+
+  <div id="result"></div>
+  <div id="metrics"></div>
+  <canvas id="tempChart"></canvas>
+
   <script>
     let chartInstance = null;
 
-async function findTemperatureData() {
-  const name = document.getElementById('station-input').value.trim();
-  const resultDiv = document.getElementById('result');
-  resultDiv.innerHTML = '';
-  if (chartInstance) {
-    chartInstance.destroy();
-    chartInstance = null;
-  }
-  if (!name) {
-    resultDiv.innerHTML = "<p>Please enter a station name.</p>";
-    return;
-  }
-
-  try {
-    // Hole alle Daten direkt!
-    const resp = await fetch(`http://localhost:3000/station?name=${encodeURIComponent(name)}&includeTemperature=true`);
-    const data = await resp.json();
-
-    if (data.error) {
-      resultDiv.innerHTML = `<p style="color:red;">${data.error}</p>`;
-      return;
-    }
-
-    // Zeige Station + Koordinaten an
-    resultDiv.innerHTML = `
-      <p>
-        <strong>Station:</strong> ${data.name}<br>
-        <strong>ID:</strong> ${data.id}<br>
-        <strong>Breite:</strong> ${data.breite}<br>
-        <strong>Länge:</strong> ${data.laenge}
-      </p>
-    `;
-
-    // Temperaturdaten aus den historischen Daten
-    const tempData = data.temperatur;
-    if (!tempData) {
-      resultDiv.innerHTML += "<p style='color:red;'>Keine Temperaturdaten gefunden.</p>";
-      return;
-    }
-
-    // Monatsnamen & Temperatur-Array (historisch)
-    const monthNames = [
-      { display: "Jan.", variants: ["Jan."] },
-      { display: "Feb.", variants: ["Feb."] },
-      { display: "März", variants: ["März", "Marz", "M�rz"] },
-      { display: "Apr.", variants: ["Apr."] },
-      { display: "Mai", variants: ["Mai"] },
-      { display: "Jun.", variants: ["Jun."] },
-      { display: "Jul.", variants: ["Jul."] },
-      { display: "Aug.", variants: ["Aug."] },
-      { display: "Sept.", variants: ["Sept."] },
-      { display: "Okt.", variants: ["Okt."] },
-      { display: "Nov.", variants: ["Nov."] },
-      { display: "Dez.", variants: ["Dez."] }
+    const monthMap = [
+      { label: 'Jan', variants: ['Jan.'] }, { label: 'Feb', variants: ['Feb.'] },
+      { label: 'Mar', variants: ['März', 'Marz', 'M�rz'] }, { label: 'Apr', variants: ['Apr.'] },
+      { label: 'May', variants: ['Mai'] }, { label: 'Jun', variants: ['Jun.'] },
+      { label: 'Jul', variants: ['Jul.'] }, { label: 'Aug', variants: ['Aug.'] },
+      { label: 'Sep', variants: ['Sept.'] }, { label: 'Oct', variants: ['Okt.'] },
+      { label: 'Nov', variants: ['Nov.'] }, { label: 'Dec', variants: ['Dez.'] }
     ];
 
-    const keys = Object.keys(tempData);
-    let months = [];
-    let temps = [];
-    monthNames.forEach(m => {
-      let match = m.variants.find(v =>
-        keys.some(k => k.trim().toLowerCase() === v.toLowerCase())
-      );
-      if (match) {
-        let key = keys.find(k => k.trim().toLowerCase() === match.toLowerCase());
-        if (tempData[key] && !isNaN(parseFloat(tempData[key].replace(',', '.')))) {
-          months.push(m.display);
-          temps.push(parseFloat(tempData[key].replace(',', '.')));
-        }
+    async function loadText(path) {
+      const r = await fetch(path);
+      if (!r.ok) throw new Error(`Failed to load ${path}`);
+      return r.text();
+    }
+
+    function parseSemicolonFile(text) {
+      const lines = text.split('\n').filter(l => l.trim());
+      const headers = lines[0].split(';').map(s => s.trim());
+      const rows = lines.slice(1).map(l => {
+        const cols = l.split(';').map(s => s.trim());
+        const obj = {};
+        headers.forEach((h, i) => obj[h] = cols[i]);
+        return obj;
+      });
+      return { headers, rows };
+    }
+
+    async function getStationAndClimateByName(name) {
+      const stationList = parseSemicolonFile(await loadText('data/Temperatur_1961-1990_Stationsliste.txt'));
+      const stations = stationList.rows;
+      const station = stations.find(r => (r['Stationsname'] || '').toLowerCase() === name.toLowerCase());
+      if (!station) return null;
+
+      const climateRows = parseSemicolonFile(await loadText('data/Temperatur_1961-1990.txt')).rows;
+      const climate = climateRows.find(r => r['Stations_id'] === station['Stations_id']);
+      return { station, climate };
+    }
+
+    function climateMonthlySeries(climateRow) {
+      const labels = [];
+      const values = [];
+      const keys = Object.keys(climateRow || {});
+      for (const month of monthMap) {
+        const key = keys.find(k => month.variants.some(v => v.toLowerCase() === k.toLowerCase()));
+        if (!key) continue;
+        const n = Number((climateRow[key] || '').replace(',', '.'));
+        if (!Number.isFinite(n)) continue;
+        labels.push(month.label);
+        values.push(n);
       }
-    });
+      return { labels, values };
+    }
 
-    // --------- Open-Meteo-Daten für 2024 und 2023 holen ---------
-    const lat = data.breite;
-    const lon = data.laenge;
-    // New: fetch monthly means for 2023 and 2024
-    const om2024Resp = await fetch(`http://localhost:3000/openmeteo/monthly-avg?lat=${lat}&lon=${lon}&year=2024`);
-    const om2023Resp = await fetch(`http://localhost:3000/openmeteo/monthly-avg?lat=${lat}&lon=${lon}&year=2023`);
-    const om2024 = await om2024Resp.json();
-    const om2023 = await om2023Resp.json();
+    function yearMonthlyFromDaily(daily) {
+      const sums = new Array(12).fill(0);
+      const counts = new Array(12).fill(0);
+      daily.time.forEach((d, i) => {
+        const m = Number(d.slice(5, 7)) - 1;
+        const t = daily.temperature_2m_mean[i];
+        if (Number.isFinite(t) && m >= 0 && m < 12) {
+          sums[m] += t;
+          counts[m] += 1;
+        }
+      });
+      return sums.map((s, i) => counts[i] ? Number((s / counts[i]).toFixed(2)) : null);
+    }
 
+    async function fetchOpenMeteoYear(lat, lon, year) {
+      const start = `${year}-01-01`;
+      const end = `${year}-12-31`;
+      const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&start_date=${start}&end_date=${end}&daily=temperature_2m_mean&timezone=auto`;
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`Open-Meteo failed (${r.status})`);
+      const data = await r.json();
+      if (!data.daily?.time || !data.daily?.temperature_2m_mean) throw new Error('Open-Meteo daily data missing');
+      return yearMonthlyFromDaily(data.daily);
+    }
 
-    // --------- Diagramm zeichnen ---------
-    const ctx = document.getElementById('tempChart').getContext('2d');
-    chartInstance = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: months, // standard: historische Monatsnamen (Jan...Dez)
-        datasets: [
-          {
-            label: 'Klimanorm 1961-1990',
-            data: temps,
-            borderColor: 'rgb(75, 192, 192)',
-            backgroundColor: 'rgba(75, 192, 192, 0.1)',
-            tension: 0.2
+    function mean(arr) {
+      const v = arr.filter(Number.isFinite);
+      return v.length ? v.reduce((a,b) => a+b, 0) / v.length : null;
+    }
+
+    async function run() {
+      const name = document.getElementById('station-input').value.trim();
+      const result = document.getElementById('result');
+      const metrics = document.getElementById('metrics');
+      result.textContent = '';
+      metrics.textContent = '';
+      if (chartInstance) chartInstance.destroy();
+      if (!name) return (result.textContent = 'Please enter a station name.');
+
+      try {
+        const combined = await getStationAndClimateByName(name);
+        if (!combined) return (result.textContent = 'Station not found in local climate dataset.');
+
+        const { station, climate } = combined;
+        const lat = Number(String(station['geoBreite']).replace(',', '.'));
+        const lon = Number(String(station['geoLaenge']).replace(',', '.'));
+        const climateSeries = climateMonthlySeries(climate);
+
+        const now = new Date();
+        const lastYear = now.getUTCFullYear() - 1;
+        const currentYear = now.getUTCFullYear();
+
+        const [yLast, yCurrent] = await Promise.all([
+          fetchOpenMeteoYear(lat, lon, lastYear),
+          fetchOpenMeteoYear(lat, lon, currentYear)
+        ]);
+
+        const climMean = mean(climateSeries.values);
+        const curMean = mean(yCurrent);
+        const delta = (Number.isFinite(climMean) && Number.isFinite(curMean)) ? (curMean - climMean) : null;
+
+        result.innerHTML = `<p><strong>Station:</strong> ${station['Stationsname']} (${station['Stations_id']}) | <strong>Lat/Lon:</strong> ${lat}, ${lon}</p>`;
+        metrics.textContent = delta === null ? 'Delta unavailable' : `Year ${currentYear} vs 1961–1990: ${delta >= 0 ? '+' : ''}${delta.toFixed(2)} °C`;
+
+        chartInstance = new Chart(document.getElementById('tempChart'), {
+          type: 'line',
+          data: {
+            labels: climateSeries.labels,
+            datasets: [
+              { label: 'Climate 1961–1990', data: climateSeries.values, borderColor: '#2a9d8f', tension: .2 },
+              { label: `${lastYear} (Open-Meteo)`, data: yLast, borderColor: '#f4a261', tension: .2 },
+              { label: `${currentYear} (Open-Meteo)`, data: yCurrent, borderColor: '#e76f51', tension: .2 }
+            ]
           },
-          ...(om2023.monthlyMeans ? [{
-            label: '2023 (Open-Meteo)',
-            data: om2023.monthlyMeans,
-            borderColor: 'orange',
-            backgroundColor: 'rgba(255,180,80,0.05)',
-            tension: 0.2
-          }] : []),
-          ...(om2024.monthlyMeans ? [{
-            label: '2024 (Open-Meteo)',
-            data: om2024.monthlyMeans,
-            borderColor: 'red',
-            backgroundColor: 'rgba(255,0,0,0.05)',
-            tension: 0.2
-          }] : [])
-        ]
-      },
-      options: {
-        responsive: true,
-        plugins: {
-          legend: { display: true },
-          title: {
-            display: true,
-            text: `Monatsmittel-Temperaturen: ${data.name}`
-          }
-        },
-        scales: {
-          y: {
-            title: { display: true, text: '°C' }
-          }
-        }
+          options: { responsive: true, scales: { y: { title: { display: true, text: '°C' } } } }
+        });
+      } catch (e) {
+        result.textContent = `Error: ${e.message}`;
       }
-    });
+    }
 
-
-  } catch (err) {
-    resultDiv.innerHTML = `<p style="color:red;">Error contacting server.</p>`;
-    console.error(err);
-  }
-}
-
+    document.getElementById('search-btn').addEventListener('click', run);
   </script>
 </body>
 </html>
