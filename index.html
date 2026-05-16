@@ -3,85 +3,46 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Weather vs Climate (GitHub Pages Ready)</title>
+  <title>Weather vs Climate (Open-Meteo + Leaflet)</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 2rem; max-width: 960px; }
-    .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+    body { font-family: Arial, sans-serif; margin: 2rem; max-width: 1000px; }
+    .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin: .5rem 0; }
     input, button { font-size: 1rem; padding: .5rem; }
+    #map { height: 420px; margin-top: 1rem; border-radius: 8px; }
     #result { margin-top: 1rem; }
     #metrics { margin: 1rem 0; font-weight: 600; }
-    canvas { max-width: 900px; }
+    canvas { max-width: 960px; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
   <h1>Weather vs Climate</h1>
-  <p>Static browser app: compares Open-Meteo recent annual monthly means with 1961–1990 station climate norm from local data files.</p>
+  <p>Frontend-only prototype using Open-Meteo APIs only. Pick a location on the map (starts with approximate network location), then compare monthly means for last year vs current year.</p>
 
   <div class="row">
-    <label for="station-input">Station name:</label>
-    <input id="station-input" type="text" placeholder="e.g. Potsdam" />
-    <button id="search-btn">Compare</button>
+    <button id="use-gps-btn">Use precise browser GPS</button>
+    <button id="compare-btn">Load Open-Meteo Data</button>
   </div>
 
+  <div id="map"></div>
   <div id="result"></div>
   <div id="metrics"></div>
   <canvas id="tempChart"></canvas>
 
   <script>
     let chartInstance = null;
+    let map;
+    let marker;
+    let selectedLat = 52.52;
+    let selectedLon = 13.405;
 
-    const monthMap = [
-      { label: 'Jan', variants: ['Jan.'] }, { label: 'Feb', variants: ['Feb.'] },
-      { label: 'Mar', variants: ['März', 'Marz', 'M�rz'] }, { label: 'Apr', variants: ['Apr.'] },
-      { label: 'May', variants: ['Mai'] }, { label: 'Jun', variants: ['Jun.'] },
-      { label: 'Jul', variants: ['Jul.'] }, { label: 'Aug', variants: ['Aug.'] },
-      { label: 'Sep', variants: ['Sept.'] }, { label: 'Oct', variants: ['Okt.'] },
-      { label: 'Nov', variants: ['Nov.'] }, { label: 'Dec', variants: ['Dez.'] }
-    ];
-
-    async function loadText(path) {
-      const r = await fetch(path);
-      if (!r.ok) throw new Error(`Failed to load ${path}`);
-      return r.text();
-    }
-
-    function parseSemicolonFile(text) {
-      const lines = text.split('\n').filter(l => l.trim());
-      const headers = lines[0].split(';').map(s => s.trim());
-      const rows = lines.slice(1).map(l => {
-        const cols = l.split(';').map(s => s.trim());
-        const obj = {};
-        headers.forEach((h, i) => obj[h] = cols[i]);
-        return obj;
-      });
-      return { headers, rows };
-    }
-
-    async function getStationAndClimateByName(name) {
-      const stationList = parseSemicolonFile(await loadText('data/Temperatur_1961-1990_Stationsliste.txt'));
-      const stations = stationList.rows;
-      const station = stations.find(r => (r['Stationsname'] || '').toLowerCase() === name.toLowerCase());
-      if (!station) return null;
-
-      const climateRows = parseSemicolonFile(await loadText('data/Temperatur_1961-1990.txt')).rows;
-      const climate = climateRows.find(r => r['Stations_id'] === station['Stations_id']);
-      return { station, climate };
-    }
-
-    function climateMonthlySeries(climateRow) {
-      const labels = [];
-      const values = [];
-      const keys = Object.keys(climateRow || {});
-      for (const month of monthMap) {
-        const key = keys.find(k => month.variants.some(v => v.toLowerCase() === k.toLowerCase()));
-        if (!key) continue;
-        const n = Number((climateRow[key] || '').replace(',', '.'));
-        if (!Number.isFinite(n)) continue;
-        labels.push(month.label);
-        values.push(n);
-      }
-      return { labels, values };
+    function toIsoDateUTC(d) {
+      const y = d.getUTCFullYear();
+      const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(d.getUTCDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
     }
 
     function yearMonthlyFromDaily(daily) {
@@ -98,11 +59,9 @@
       return sums.map((s, i) => counts[i] ? Number((s / counts[i]).toFixed(2)) : null);
     }
 
-    function toIsoDateUTC(d) {
-      const y = d.getUTCFullYear();
-      const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-      const day = String(d.getUTCDate()).padStart(2, '0');
-      return `${y}-${m}-${day}`;
+    function mean(arr) {
+      const v = arr.filter(Number.isFinite);
+      return v.length ? v.reduce((a,b) => a+b, 0) / v.length : null;
     }
 
     async function fetchOpenMeteoYear(lat, lon, year, maxEndDate) {
@@ -116,54 +75,84 @@
       return yearMonthlyFromDaily(data.daily);
     }
 
-    function mean(arr) {
-      const v = arr.filter(Number.isFinite);
-      return v.length ? v.reduce((a,b) => a+b, 0) / v.length : null;
+    function updateSelectionText(sourceLabel) {
+      document.getElementById('result').innerHTML = `<p><strong>${sourceLabel}</strong> | <strong>Lat/Lon:</strong> ${selectedLat.toFixed(5)}, ${selectedLon.toFixed(5)}</p>`;
     }
 
-    async function run() {
-      const name = document.getElementById('station-input').value.trim();
-      const result = document.getElementById('result');
-      const metrics = document.getElementById('metrics');
-      result.textContent = '';
-      metrics.textContent = '';
-      if (chartInstance) chartInstance.destroy();
-      if (!name) return (result.textContent = 'Please enter a station name.');
+    function setMarker(lat, lon, sourceLabel) {
+      selectedLat = lat;
+      selectedLon = lon;
+      marker.setLatLng([lat, lon]);
+      map.panTo([lat, lon]);
+      updateSelectionText(sourceLabel);
+    }
+
+    async function getIpApproxLocation() {
+      const r = await fetch('https://ipapi.co/json/');
+      if (!r.ok) throw new Error('IP location service unavailable');
+      const data = await r.json();
+      if (!Number.isFinite(data.latitude) || !Number.isFinite(data.longitude)) {
+        throw new Error('IP location did not return coordinates');
+      }
+      return { lat: data.latitude, lon: data.longitude, city: data.city, country: data.country_name };
+    }
+
+    async function initMap() {
+      map = L.map('map').setView([selectedLat, selectedLon], 6);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+
+      marker = L.marker([selectedLat, selectedLon], { draggable: true }).addTo(map);
+      marker.on('dragend', () => {
+        const p = marker.getLatLng();
+        selectedLat = p.lat;
+        selectedLon = p.lng;
+        updateSelectionText('Location manually adjusted on map');
+      });
+
+      map.on('click', (e) => setMarker(e.latlng.lat, e.latlng.lng, 'Location selected by map click'));
 
       try {
-        const combined = await getStationAndClimateByName(name);
-        if (!combined) return (result.textContent = 'Station not found in local climate dataset.');
+        const ipLoc = await getIpApproxLocation();
+        setMarker(ipLoc.lat, ipLoc.lon, `Approximate network location: ${ipLoc.city || 'Unknown city'}, ${ipLoc.country || 'Unknown country'}`);
+        map.setZoom(9);
+      } catch (e) {
+        updateSelectionText('Using default location (network location unavailable)');
+      }
+    }
 
-        const { station, climate } = combined;
-        const lat = Number(String(station['geoBreite']).replace(',', '.'));
-        const lon = Number(String(station['geoLaenge']).replace(',', '.'));
-        const climateSeries = climateMonthlySeries(climate);
+    async function runComparison() {
+      const metrics = document.getElementById('metrics');
+      metrics.textContent = '';
+      if (chartInstance) chartInstance.destroy();
 
-        const now = new Date();
-        const lastYear = now.getUTCFullYear() - 1;
-        const currentYear = now.getUTCFullYear();
-        // Open-Meteo archive does not provide future dates.
-        const yesterdayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1));
-        const maxEndDate = toIsoDateUTC(yesterdayUtc);
+      const now = new Date();
+      const lastYear = now.getUTCFullYear() - 1;
+      const currentYear = now.getUTCFullYear();
+      const yesterdayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1));
+      const maxEndDate = toIsoDateUTC(yesterdayUtc);
 
+      try {
         const [yLast, yCurrent] = await Promise.all([
-          fetchOpenMeteoYear(lat, lon, lastYear, maxEndDate),
-          fetchOpenMeteoYear(lat, lon, currentYear, maxEndDate)
+          fetchOpenMeteoYear(selectedLat, selectedLon, lastYear, maxEndDate),
+          fetchOpenMeteoYear(selectedLat, selectedLon, currentYear, maxEndDate)
         ]);
 
-        const climMean = mean(climateSeries.values);
         const curMean = mean(yCurrent);
-        const delta = (Number.isFinite(climMean) && Number.isFinite(curMean)) ? (curMean - climMean) : null;
+        const lastMean = mean(yLast);
+        const delta = (Number.isFinite(lastMean) && Number.isFinite(curMean)) ? (curMean - lastMean) : null;
 
-        result.innerHTML = `<p><strong>Station:</strong> ${station['Stationsname']} (${station['Stations_id']}) | <strong>Lat/Lon:</strong> ${lat}, ${lon}</p>`;
-        metrics.textContent = delta === null ? 'Delta unavailable' : `Year ${currentYear} vs 1961–1990: ${delta >= 0 ? '+' : ''}${delta.toFixed(2)} °C`;
+        metrics.textContent = delta === null
+          ? 'Delta unavailable'
+          : `${currentYear} vs ${lastYear}: ${delta >= 0 ? '+' : ''}${delta.toFixed(2)} °C`;
 
         chartInstance = new Chart(document.getElementById('tempChart'), {
           type: 'line',
           data: {
-            labels: climateSeries.labels,
+            labels: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
             datasets: [
-              { label: 'Climate 1961–1990', data: climateSeries.values, borderColor: '#2a9d8f', tension: .2 },
               { label: `${lastYear} (Open-Meteo)`, data: yLast, borderColor: '#f4a261', tension: .2 },
               { label: `${currentYear} (Open-Meteo)`, data: yCurrent, borderColor: '#e76f51', tension: .2 }
             ]
@@ -171,11 +160,20 @@
           options: { responsive: true, scales: { y: { title: { display: true, text: '°C' } } } }
         });
       } catch (e) {
-        result.textContent = `Error: ${e.message}`;
+        document.getElementById('result').textContent = `Error: ${e.message}`;
       }
     }
 
-    document.getElementById('search-btn').addEventListener('click', run);
+    document.getElementById('use-gps-btn').addEventListener('click', () => {
+      if (!navigator.geolocation) return;
+      navigator.geolocation.getCurrentPosition(
+        (pos) => setMarker(pos.coords.latitude, pos.coords.longitude, 'Precise browser GPS location'),
+        () => updateSelectionText('GPS permission denied, keep current map location')
+      );
+    });
+
+    document.getElementById('compare-btn').addEventListener('click', runComparison);
+    initMap();
   </script>
 </body>
 </html>

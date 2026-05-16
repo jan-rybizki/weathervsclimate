@@ -1,6 +1,6 @@
 # weathervsclimate
 
-GitHub-Pages-ready static prototype that compares recent weather (Open-Meteo) vs. historical station climate normals (1961–1990) from local dataset files.
+GitHub-Pages-ready static prototype that uses Open-Meteo only. Place selection is done via Leaflet + OpenStreetMap map picker and all weather data is loaded from Open-Meteo APIs using selected coordinates.
 
 ## Run locally (no Node server required)
 
@@ -17,6 +17,10 @@ Use GitHub Pages directly after pushing this repository.
 
 ## Notes
 
-- Frontend-only architecture (no `server.js` required for the prototype).
-- Climate baseline is loaded from `data/Temperatur_1961-1990*.txt` in the repo.
-- Recent weather is fetched in-browser from Open-Meteo archive API.
+- Frontend-only architecture.
+- `server.js` and local station lists are deprecated and will be removed.
+- Location flow:
+  - start with approximate network/IP location (if available),
+  - adjust by clicking/dragging marker on map,
+  - optionally replace with precise browser GPS.
+- Open-Meteo archive API is queried with selected `latitude`/`longitude`.
