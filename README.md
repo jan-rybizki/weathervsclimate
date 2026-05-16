@@ -24,3 +24,6 @@ Use GitHub Pages directly after pushing this repository.
   - adjust by clicking/dragging marker on map,
   - optionally replace with precise browser GPS.
 - Open-Meteo archive API is queried with selected `latitude`/`longitude`.
+- Charts include:
+  - Temperature: current year monthly means vs 30-year climate mean (1961-1990).
+  - Rainfall: current year monthly totals vs 30-year monthly rainfall mean (1961-1990).
