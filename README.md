@@ -15,6 +15,9 @@ Then open: <http://localhost:8080>
 Option 2:
 Use GitHub Pages directly after pushing this repository.
 
+GitHub Pages link (replace `<username>` with your GitHub username):
+<https://<username>.github.io/weathervsclimate/>
+
 ## Notes
 
 - Frontend-only architecture.
