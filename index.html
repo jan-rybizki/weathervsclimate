@@ -317,32 +317,29 @@
         const showRecent = document.getElementById('toggleRecent12').checked;
         const showPrev = document.getElementById('togglePrev12').checked;
 
-        const displayFrom = showPrev ? prevRange.from : recentRange.from;
-        const displayTo = recentRange.to;
-
-        function displaySlice(arr) { return arr.slice(displayFrom, displayTo); }
-
-        const labels = displaySlice(current.labels);
-        const displayTemp = displaySlice(current.temp);
-        const displayRain = displaySlice(current.rain);
-        const displayClimateTemp = displaySlice(climateTemp);
-        const displayClimateRain = displaySlice(climateRain);
+        const labels = monthLabels();
+        const foldedRecentTemp = sliceRange(current.temp, recentRange);
+        const foldedRecentRain = sliceRange(current.rain, recentRange);
+        const foldedRecentClimateTemp = sliceRange(climateTemp, recentRange);
+        const foldedRecentClimateRain = sliceRange(climateRain, recentRange);
+        const foldedPrevTemp = sliceRange(current.temp, prevRange);
+        const foldedPrevRain = sliceRange(current.rain, prevRange);
 
         const tempDatasets = [];
         const rainDatasets = [];
         if (showRecent) {
-          tempDatasets.push({ label: 'Letzte 12 Monate Temperatur', data: displayTemp.map((v,i)=> i>=Math.max(recentRange.from - displayFrom, 0) ? v : null), borderColor: '#3a86ff', tension:.2 });
-          rainDatasets.push({ label: 'Letzte 12 Monate Niederschlag', data: displayRain.map((v,i)=> i>=Math.max(recentRange.from - displayFrom, 0) ? v : null), borderColor: '#3a86ff', tension:.2 });
+          tempDatasets.push({ label: 'Letzte 12 Monate Temperatur', data: foldedRecentTemp, borderColor: '#3a86ff', tension:.2 });
+          rainDatasets.push({ label: 'Letzte 12 Monate Niederschlag', data: foldedRecentRain, borderColor: '#3a86ff', tension:.2 });
         }
         if (showPrev) {
-          tempDatasets.push({ label: '12-24 Monate zurück Temperatur', data: displayTemp.map((v,i)=> i<Math.max(prevRange.to - displayFrom, 0) ? v : null), borderColor: '#ff006e', tension:.2 });
-          rainDatasets.push({ label: '12-24 Monate zurück Niederschlag', data: displayRain.map((v,i)=> i<Math.max(prevRange.to - displayFrom, 0) ? v : null), borderColor: '#ff006e', tension:.2 });
+          tempDatasets.push({ label: '12-24 Monate zurück Temperatur', data: foldedPrevTemp, borderColor: '#ff006e', tension:.2 });
+          rainDatasets.push({ label: '12-24 Monate zurück Niederschlag', data: foldedPrevRain, borderColor: '#ff006e', tension:.2 });
         }
-        tempDatasets.push({ label: '1961-1990 Monatsmittel (zugeordnet)', data: displayClimateTemp, borderColor: '#457b9d', borderDash:[5,5], tension:.2 });
-        rainDatasets.push({ label: '1961-1990 Niederschlagsmittel (zugeordnet)', data: displayClimateRain, borderColor: '#264653', borderDash:[5,5], tension:.2 });
+        tempDatasets.push({ label: '1961-1990 Monatsmittel (zugeordnet)', data: foldedRecentClimateTemp, borderColor: '#457b9d', borderDash:[5,5], tension:.2 });
+        rainDatasets.push({ label: '1961-1990 Niederschlagsmittel (zugeordnet)', data: foldedRecentClimateRain, borderColor: '#264653', borderDash:[5,5], tension:.2 });
 
         const tempBounds = { min: -5, max: 25 };
-        const rainBounds = computeAxisBounds([displayRain, displayClimateRain], 0.08, 0);
+        const rainBounds = computeAxisBounds([foldedRecentRain, foldedPrevRain, foldedRecentClimateRain], 0.08, 0);
 
         tempChartInstance = new Chart(document.getElementById('tempChart'), { type:'line', data:{ labels, datasets: tempDatasets }, options:{ responsive:true, maintainAspectRatio:false, plugins:{ title:{display:true, text:'🌡️ Temperatur: ausgewählter Zeitraum'} }, scales:{ y:{ min:tempBounds?.min, max:tempBounds?.max, title:{display:true,text:'°C'} } } } });
         rainChartInstance = new Chart(document.getElementById('rainChart'), { type:'line', data:{ labels, datasets: rainDatasets }, options:{ responsive:true, maintainAspectRatio:false, plugins:{ title:{display:true, text:'💧 Niederschlag: ausgewählter Zeitraum'} }, scales:{ y:{ min:rainBounds?.min, max:rainBounds?.max, title:{display:true,text:'mm'} } } } });
