@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Weather vs Climate (Open-Meteo + Leaflet)</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; max-width: 1000px; }
+    .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin: .5rem 0; }
+    input, button { font-size: 1rem; padding: .5rem; }
+    #map { height: 420px; margin-top: 1rem; border-radius: 8px; }
+    #result { margin-top: 1rem; }
+    #metrics { margin: 1rem 0; font-weight: 600; }
+    .range-controls { margin: .75rem 0 1rem; padding: .6rem .8rem; border: 1px solid #ddd; border-radius: 8px; }
+    .range-item { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin: .35rem 0; }
+    .range-item label { display: flex; align-items: center; gap: .4rem; font-weight: 600; }
+    .range-metrics { color: #1d3557; font-size: .95rem; }
+    .chart-block { margin-top: 1.25rem; }
+    .chart-header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: .35rem; }
+    .chart-delta { font-weight: 600; color: #1d3557; }
+    canvas { width: 100% !important; height: 420px !important; max-width: 100%; }
+    .ad-banner { margin: 1.5rem 0; padding: 1rem; border: 2px dashed #9aa0a6; border-radius: 10px; background: #f8f9fa; }
+    .ad-banner h2 { margin: 0 0 .5rem 0; font-size: 1.1rem; }
+    .ad-banner small { color: #555; display:block; margin-top:.5rem; }
+    .legal { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #ddd; }
+    .legal h2 { margin-top: 1.4rem; }
+    .legal p, .legal li { line-height: 1.45; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+  <h1>Weather vs Climate</h1>
+  <p>Frontend-only prototype using Open-Meteo APIs only. Pick a location on the map (starts with approximate network location), then compare current values with the 30-year climate mean (1961-1990).</p>
+
+  <div class="row">
+    <button id="use-gps-btn">Use precise browser GPS</button>
+    <button id="compare-btn">Load Open-Meteo Data</button>
+  </div>
+
+  <div id="map"></div>
+  <div id="result"></div>
+  <div id="metrics"></div>
+
+  <div class="range-controls">
+    <div class="range-item">
+      <label><input type="checkbox" id="toggleRecent12" checked> Letzte 12 Monate anzeigen</label>
+      <span id="recent12Metrics" class="range-metrics">Δ zum Langzeitmittel: –</span>
+    </div>
+    <div class="range-item">
+      <label><input type="checkbox" id="togglePrev12"> 12–24 Monate zurück anzeigen</label>
+      <span id="prev12Metrics" class="range-metrics">Δ zum Langzeitmittel: –</span>
+    </div>
+  </div>
+
+  <div class="chart-block">
+    <div class="chart-header">
+      <strong>🌡️ Temperature plot</strong>
+      <span id="tempYearDelta" class="chart-delta"></span>
+    </div>
+    <canvas id="tempChart"></canvas>
+  </div>
+  <div class="chart-block">
+    <div class="chart-header">
+      <strong>💧 Precipitation plot</strong>
+      <span id="rainYearDelta" class="chart-delta"></span>
+    </div>
+    <canvas id="rainChart"></canvas>
+  </div>
+
+
+  <section class="ad-banner" aria-label="Werbebereich">
+    <h2>Werbung</h2>
+    <p>Hier wird ein Werbebanner eingeblendet. Dieser Platzhalter kann später mit Google AdSense befüllt werden.</p>
+    <div id="adsense-placeholder" style="min-height:90px; display:flex; align-items:center; justify-content:center; color:#666; background:#fff; border:1px solid #ddd; border-radius:8px;">
+      Platzhalter für AdSense-Banner (z. B. 728×90 oder responsiv)
+    </div>
+    <small>Hinweis: Aktuell ist kein aktives Werbenetzwerk eingebunden.</small>
+  </section>
+
+  <section class="legal" id="rechtliches">
+    <h2>Datenschutzhinweise</h2>
+    <p>Diese Webseite verarbeitet ausschließlich technisch notwendige Daten für die Anzeige der Inhalte (z. B. angefragte URL, Browsertyp, Zeitpunkt). Es werden auf dieser Seite keine Analyse- oder Tracking-Dienste eingesetzt.</p>
+    <p>Wenn Sie die Standortfunktion nutzen, werden Ihre Koordinaten ausschließlich zur Abfrage von Wetter- und Klimadaten bei Open-Meteo verwendet. Eine eigene dauerhafte Speicherung der Standortdaten durch diese Webseite erfolgt nicht.</p>
+
+    <h2>Hinweis zur Werbung</h2>
+    <p>Diese Webseite enthält einen vorbereiteten Werbeplatz. Sobald ein Werbenetzwerk wie Google AdSense aktiviert wird, können durch den jeweiligen Anbieter personenbezogene Daten verarbeitet und Cookies gesetzt werden.</p>
+    <p>Vor Aktivierung personalisierter Werbung muss ein geeigneter Consent-Mechanismus (Einwilligung) ergänzt werden.</p>
+
+    <h2>Impressum (Platzhalter)</h2>
+    <p>Bitte ergänzen Sie hier Ihre Pflichtangaben, insbesondere:</p>
+    <ul>
+      <li>Name/Firma der verantwortlichen Person oder Gesellschaft</li>
+      <li>Ladungsfähige Anschrift</li>
+      <li>Kontakt (E-Mail, optional Telefon)</li>
+      <li>Ggf. Umsatzsteuer-ID und weitere regulatorische Angaben</li>
+    </ul>
+  </section>
+
+  <!-- Beispiel für spätere AdSense-Einbindung (aktuell deaktiviert):
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX" crossorigin="anonymous"></script>
+  <ins class="adsbygoogle"
+       style="display:block"
+       data-ad-client="ca-pub-XXXXXXXXXXXXXXXX"
+       data-ad-slot="1234567890"
+       data-ad-format="auto"
+       data-full-width-responsive="true"></ins>
+  <script>
+       (adsbygoogle = window.adsbygoogle || []).push({});
+  </script>
+  -->
+
+  <script>
+    let tempChartInstance = null;
+    let rainChartInstance = null;
+    let map;
+    let marker;
+    let selectedLat = 52.52;
+    let selectedLon = 13.405;
+
+    function toIsoDateUTC(d) {
+      const y = d.getUTCFullYear();
+      const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(d.getUTCDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
+    function mean(arr) {
+      const v = arr.filter(Number.isFinite);
+      return v.length ? v.reduce((a,b) => a+b, 0) / v.length : null;
+    }
+
+    function monthLabels() {
+      return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    }
+
+    async function fetchOpenMeteoDaily(lat, lon, startDate, endDate) {
+      const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&start_date=${startDate}&end_date=${endDate}&daily=temperature_2m_mean,precipitation_sum&timezone=auto`;
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`Open-Meteo failed (${r.status})`);
+      const data = await r.json();
+      if (!data.daily?.time || !data.daily?.temperature_2m_mean || !data.daily?.precipitation_sum) {
+        throw new Error('Open-Meteo daily data missing');
+      }
+      return data.daily;
+    }
+
+    function last12MonthsFromDaily(daily) {
+      const tempSums = new Array(12).fill(0);
+      const tempCounts = new Array(12).fill(0);
+      const rainMonthly = new Array(12).fill(0);
+
+      daily.time.forEach((dateStr, i) => {
+        const m = Number(dateStr.slice(5, 7)) - 1;
+        if (m < 0 || m > 11) return;
+
+        const t = daily.temperature_2m_mean[i];
+        if (Number.isFinite(t)) {
+          tempSums[m] += t;
+          tempCounts[m] += 1;
+        }
+
+        const p = daily.precipitation_sum[i];
+        if (Number.isFinite(p)) {
+          rainMonthly[m] += p;
+        }
+      });
+
+      return {
+        tempMonthlyMean: tempSums.map((s, i) => tempCounts[i] ? Number((s / tempCounts[i]).toFixed(2)) : null),
+        rainMonthlyTotal: rainMonthly.map((v) => Number(v.toFixed(2)))
+      };
+    }
+
+    function climateMean1961To1990FromDaily(daily) {
+      const tempSums = new Array(12).fill(0);
+      const tempCounts = new Array(12).fill(0);
+
+      const rainByYearMonth = new Map();
+
+      daily.time.forEach((dateStr, i) => {
+        const year = Number(dateStr.slice(0, 4));
+        const month = Number(dateStr.slice(5, 7)) - 1;
+        if (month < 0 || month > 11) return;
+
+        const t = daily.temperature_2m_mean[i];
+        if (Number.isFinite(t)) {
+          tempSums[month] += t;
+          tempCounts[month] += 1;
+        }
+
+        const p = daily.precipitation_sum[i];
+        if (Number.isFinite(p)) {
+          const key = `${year}-${month}`;
+          rainByYearMonth.set(key, (rainByYearMonth.get(key) || 0) + p);
+        }
+      });
+
+      const rainMonthSums = new Array(12).fill(0);
+      const rainMonthCounts = new Array(12).fill(0);
+      for (const [key, total] of rainByYearMonth.entries()) {
+        const month = Number(key.split('-')[1]);
+        rainMonthSums[month] += total;
+        rainMonthCounts[month] += 1;
+      }
+
+      return {
+        tempMonthlyMean: tempSums.map((s, i) => tempCounts[i] ? Number((s / tempCounts[i]).toFixed(2)) : null),
+        rainMonthlyMeanTotal: rainMonthSums.map((s, i) => rainMonthCounts[i] ? Number((s / rainMonthCounts[i]).toFixed(2)) : null)
+      };
+    }
+
+    function updateSelectionText(sourceLabel) {
+      document.getElementById('result').innerHTML = `<p><strong>${sourceLabel}</strong> | <strong>Lat/Lon:</strong> ${selectedLat.toFixed(5)}, ${selectedLon.toFixed(5)}</p>`;
+    }
+
+    function setMarker(lat, lon, sourceLabel) {
+      selectedLat = lat;
+      selectedLon = lon;
+      marker.setLatLng([lat, lon]);
+      map.panTo([lat, lon]);
+      updateSelectionText(sourceLabel);
+    }
+
+    async function getIpApproxLocation() {
+      const r = await fetch('https://ipapi.co/json/');
+      if (!r.ok) throw new Error('IP location service unavailable');
+      const data = await r.json();
+      if (!Number.isFinite(data.latitude) || !Number.isFinite(data.longitude)) {
+        throw new Error('IP location did not return coordinates');
+      }
+      return { lat: data.latitude, lon: data.longitude, city: data.city, country: data.country_name };
+    }
+
+    async function initMap() {
+      map = L.map('map').setView([selectedLat, selectedLon], 6);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+
+      marker = L.marker([selectedLat, selectedLon], { draggable: true }).addTo(map);
+      marker.on('dragend', () => {
+        const p = marker.getLatLng();
+        selectedLat = p.lat;
+        selectedLon = p.lng;
+        updateSelectionText('Location manually adjusted on map');
+      });
+
+      map.on('click', (e) => setMarker(e.latlng.lat, e.latlng.lng, 'Location selected by map click'));
+
+      try {
+        const ipLoc = await getIpApproxLocation();
+        setMarker(ipLoc.lat, ipLoc.lon, `Approximate network location: ${ipLoc.city || 'Unknown city'}, ${ipLoc.country || 'Unknown country'}`);
+        map.setZoom(9);
+      } catch (e) {
+        updateSelectionText('Using default location (network location unavailable)');
+      }
+    }
+
+
+
+    function buildLast24MonthlySeries(daily) {
+      const buckets = new Map();
+      daily.time.forEach((dateStr, i) => {
+        const key = dateStr.slice(0, 7); // YYYY-MM
+        const t = daily.temperature_2m_mean[i];
+        const p = daily.precipitation_sum[i];
+        const b = buckets.get(key) || { tempSum: 0, tempCount: 0, rainSum: 0 };
+        if (Number.isFinite(t)) { b.tempSum += t; b.tempCount += 1; }
+        if (Number.isFinite(p)) { b.rainSum += p; }
+        buckets.set(key, b);
+      });
+      const months = [...buckets.keys()].sort();
+      const last24 = months.slice(-24);
+      return {
+        keys: last24,
+        labels: last24.map((k) => {
+          const [y, m] = k.split('-');
+          return `${m}/${String(y).slice(2)}`;
+        }),
+        temp: last24.map((k) => {
+          const b = buckets.get(k);
+          return b && b.tempCount ? Number((b.tempSum / b.tempCount).toFixed(2)) : null;
+        }),
+        rain: last24.map((k) => {
+          const b = buckets.get(k);
+          return b ? Number(b.rainSum.toFixed(2)) : null;
+        })
+      };
+    }
+
+    function climateSeriesForMonths(monthKeys, climateMonthly) {
+      return monthKeys.map((k) => {
+        const monthIdx = Number(k.slice(5, 7)) - 1;
+        return climateMonthly[monthIdx] ?? null;
+      });
+    }
+
+    function meanDelta(series, baseline) {
+      const diffs = series.map((v, i) => Number.isFinite(v) && Number.isFinite(baseline[i]) ? v - baseline[i] : null).filter(Number.isFinite);
+      return diffs.length ? mean(diffs) : null;
+    }
+
+    function percentDelta(series, baseline) {
+      const s = mean(series);
+      const b = mean(baseline);
+      if (!Number.isFinite(s) || !Number.isFinite(b) || b === 0) return null;
+      return ((s - b) / b) * 100;
+    }
+
+    function computeAxisBounds(seriesList, padRatio = 0.08, fixedMin = null) {
+      const flat = seriesList.flat().filter(Number.isFinite);
+      if (!flat.length) return undefined;
+      const min = fixedMin === null ? Math.min(...flat) : fixedMin;
+      const max = Math.max(...flat);
+      if (min === max) {
+        const pad = Math.max(1, Math.abs(min) * padRatio);
+        return { min: Number((min - pad).toFixed(2)), max: Number((max + pad).toFixed(2)) };
+      }
+      const span = max - min;
+      const pad = span * padRatio;
+      return { min: Number(min.toFixed(2)), max: Number((max + pad).toFixed(2)) };
+    }
+
+    async function runComparison() {
+      const metrics = document.getElementById('metrics');
+      metrics.textContent = '';
+      if (tempChartInstance) tempChartInstance.destroy();
+      if (rainChartInstance) rainChartInstance.destroy();
+      document.getElementById('tempChart').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+      const now = new Date();
+      const endStr = toIsoDateUTC(now);
+      const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 24, 1));
+      const startStr = toIsoDateUTC(start);
+
+      try {
+        const [currentDaily, climateDaily] = await Promise.all([
+          fetchOpenMeteoDaily(selectedLat, selectedLon, startStr, endStr),
+          fetchOpenMeteoDaily(selectedLat, selectedLon, '1961-01-01', '1990-12-31')
+        ]);
+
+        const current = buildLast24MonthlySeries(currentDaily);
+        const climate = climateMean1961To1990FromDaily(climateDaily);
+        const climateTemp = climateSeriesForMonths(current.keys, climate.tempMonthlyMean);
+        const climateRain = climateSeriesForMonths(current.keys, climate.rainMonthlyMeanTotal);
+
+        const recentRange = { from: Math.max(current.keys.length - 12, 0), to: current.keys.length };
+        const prevRange = { from: Math.max(current.keys.length - 24, 0), to: Math.max(current.keys.length - 12, 0) };
+
+        function sliceRange(arr, r) { return arr.slice(r.from, r.to); }
+
+        const recentTempDelta = meanDelta(sliceRange(current.temp, recentRange), sliceRange(climateTemp, recentRange));
+        const recentRainDelta = percentDelta(sliceRange(current.rain, recentRange), sliceRange(climateRain, recentRange));
+        const prevTempDelta = meanDelta(sliceRange(current.temp, prevRange), sliceRange(climateTemp, prevRange));
+        const prevRainDelta = percentDelta(sliceRange(current.rain, prevRange), sliceRange(climateRain, prevRange));
+
+        document.getElementById('recent12Metrics').textContent = `ΔT: ${recentTempDelta===null?'–':`${recentTempDelta>=0?'+':''}${recentTempDelta.toFixed(2)} °C`} | ΔN: ${recentRainDelta===null?'–':`${recentRainDelta>=0?'+':''}${recentRainDelta.toFixed(1)} %`}`;
+        document.getElementById('prev12Metrics').textContent = `ΔT: ${prevTempDelta===null?'–':`${prevTempDelta>=0?'+':''}${prevTempDelta.toFixed(2)} °C`} | ΔN: ${prevRainDelta===null?'–':`${prevRainDelta>=0?'+':''}${prevRainDelta.toFixed(1)} %`}`;
+
+        metrics.textContent = `Vergleich für ${startStr} bis ${endStr} (24 Monate geladen; Anzeige per Checkbox für letzte 12 bzw. 12–24 Monate) mit dem Langzeitmittel 1961-1990 (gleiche Koordinaten).`;
+
+        const showRecent = document.getElementById('toggleRecent12').checked;
+        const showPrev = document.getElementById('togglePrev12').checked;
+
+        const labels = sliceRange(current.keys, recentRange).map((k) => {
+          const d = new Date(`${k}-01T00:00:00Z`);
+          return d.toLocaleString('de-DE', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+        });
+        const currentMonthIndex = labels.length - 1;
+        const foldedRecentTemp = sliceRange(current.temp, recentRange);
+        const foldedRecentRain = sliceRange(current.rain, recentRange);
+        const foldedRecentClimateTemp = sliceRange(climateTemp, recentRange);
+        const foldedRecentClimateRain = sliceRange(climateRain, recentRange);
+        const foldedPrevTemp = sliceRange(current.temp, prevRange);
+        const foldedPrevRain = sliceRange(current.rain, prevRange);
+
+        const tempDatasets = [];
+        const rainDatasets = [];
+        if (showRecent) {
+          tempDatasets.push({
+            label: 'Letzte 12 Monate Temperatur',
+            data: foldedRecentTemp,
+            borderColor: '#3a86ff',
+            pointRadius: foldedRecentTemp.map((_, i) => i === currentMonthIndex ? 6 : 3),
+            pointBackgroundColor: foldedRecentTemp.map((_, i) => i === currentMonthIndex ? '#e63946' : '#3a86ff'),
+            tension:.2
+          });
+          rainDatasets.push({
+            label: 'Letzte 12 Monate Niederschlag',
+            data: foldedRecentRain,
+            borderColor: '#3a86ff',
+            pointRadius: foldedRecentRain.map((_, i) => i === currentMonthIndex ? 6 : 3),
+            pointBackgroundColor: foldedRecentRain.map((_, i) => i === currentMonthIndex ? '#e63946' : '#3a86ff'),
+            tension:.2
+          });
+        }
+        if (showPrev) {
+          tempDatasets.push({ label: '12-24 Monate zurück Temperatur', data: foldedPrevTemp, borderColor: '#ff006e', tension:.2 });
+          rainDatasets.push({ label: '12-24 Monate zurück Niederschlag', data: foldedPrevRain, borderColor: '#ff006e', tension:.2 });
+        }
+        tempDatasets.push({ label: '1961-1990 Monatsmittel (zugeordnet)', data: foldedRecentClimateTemp, borderColor: '#457b9d', borderDash:[5,5], tension:.2 });
+        rainDatasets.push({ label: '1961-1990 Niederschlagsmittel (zugeordnet)', data: foldedRecentClimateRain, borderColor: '#264653', borderDash:[5,5], tension:.2 });
+
+        const tempBounds = { min: -5, max: 25 };
+        const rainBounds = computeAxisBounds([foldedRecentRain, foldedPrevRain, foldedRecentClimateRain], 0.08, 0);
+
+        tempChartInstance = new Chart(document.getElementById('tempChart'), { type:'line', data:{ labels, datasets: tempDatasets }, options:{ responsive:true, maintainAspectRatio:false, plugins:{ title:{display:true, text:'🌡️ Temperatur: ausgewählter Zeitraum'} }, scales:{ y:{ min:tempBounds?.min, max:tempBounds?.max, title:{display:true,text:'°C'} } } } });
+        rainChartInstance = new Chart(document.getElementById('rainChart'), { type:'line', data:{ labels, datasets: rainDatasets }, options:{ responsive:true, maintainAspectRatio:false, plugins:{ title:{display:true, text:'💧 Niederschlag: ausgewählter Zeitraum'} }, scales:{ y:{ min:rainBounds?.min, max:rainBounds?.max, title:{display:true,text:'mm'} } } } });
+
+        document.getElementById('tempYearDelta').textContent = recentTempDelta===null ? 'Δ (letzte 12M): –' : `Δ (letzte 12M): ${recentTempDelta>=0?'+':''}${recentTempDelta.toFixed(2)} °C`;
+        document.getElementById('rainYearDelta').textContent = recentRainDelta===null ? 'Δ (letzte 12M): –' : `Δ (letzte 12M): ${recentRainDelta>=0?'+':''}${recentRainDelta.toFixed(1)} %`;
+      } catch (e) {
+        document.getElementById('result').textContent = `Error: ${e.message}`;
+      }
+    }
+
+    document.getElementById('toggleRecent12').addEventListener('change', runComparison);
+    document.getElementById('togglePrev12').addEventListener('change', runComparison);
+    document.getElementById('use-gps-btn').addEventListener('click', () => {
+      if (!navigator.geolocation) return;
+      navigator.geolocation.getCurrentPosition(
+        (pos) => setMarker(pos.coords.latitude, pos.coords.longitude, 'Precise browser GPS location'),
+        () => updateSelectionText('GPS permission denied, keep current map location')
+      );
+    });
+
+    document.getElementById('compare-btn').addEventListener('click', runComparison);
+    initMap();
+  </script>
+</body>
+</html>
