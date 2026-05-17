@@ -35,14 +35,14 @@
 
   <div class="chart-block">
     <div class="chart-header">
-      <strong>Temperature plot</strong>
+      <strong>🌡️ Temperature plot</strong>
       <span id="tempYearDelta" class="chart-delta"></span>
     </div>
     <canvas id="tempChart"></canvas>
   </div>
   <div class="chart-block">
     <div class="chart-header">
-      <strong>Precipitation plot</strong>
+      <strong>💧 Precipitation plot</strong>
       <span id="rainYearDelta" class="chart-delta"></span>
     </div>
     <canvas id="rainChart"></canvas>
@@ -198,14 +198,7 @@
 
 
 
-    function monthlyPointsFromLast12Months(daily, endDateUtc) {
-      const monthEntries = [];
-      const startMonth = new Date(Date.UTC(endDateUtc.getUTCFullYear(), endDateUtc.getUTCMonth() - 11, 1));
-      for (let i = 0; i < 12; i++) {
-        const d = new Date(Date.UTC(startMonth.getUTCFullYear(), startMonth.getUTCMonth() + i, 1));
-        monthEntries.push({ year: d.getUTCFullYear(), month: d.getUTCMonth() });
-      }
-
+    function monthlyPointsByYear(daily, years) {
       const tempSums = new Map();
       const tempCounts = new Map();
       const rainSums = new Map();
@@ -225,23 +218,18 @@
         if (Number.isFinite(p)) rainSums.set(key, (rainSums.get(key) || 0) + p);
       });
 
-      const labels = monthEntries.map(({ year, month }) => `${monthLabels()[month]} ${String(year).slice(2)}`);
-      const tempMonthlyMean = monthEntries.map(({ year, month }) => {
+      const tempByYear = years.map((year) => new Array(12).fill(null).map((_, month) => {
         const key = `${year}-${month}`;
         const c = tempCounts.get(key) || 0;
         return c ? Number((tempSums.get(key) / c).toFixed(2)) : null;
-      });
-      const rainMonthlyTotal = monthEntries.map(({ year, month }) => {
+      }));
+      const rainByYear = years.map((year) => new Array(12).fill(null).map((_, month) => {
         const key = `${year}-${month}`;
         const v = rainSums.get(key);
         return Number.isFinite(v) ? Number(v.toFixed(2)) : null;
-      });
+      }));
 
-      return { labels, monthEntries, tempMonthlyMean, rainMonthlyTotal };
-    }
-
-    function climateForMonthEntries(climateMonthly, monthEntries) {
-      return monthEntries.map(({ month }) => climateMonthly[month]);
+      return { labels: monthLabels(), tempByYear, rainByYear };
     }
 
     function computeAxisBounds(seriesList, padRatio = 0.08) {
@@ -262,34 +250,33 @@
       metrics.textContent = '';
       if (tempChartInstance) tempChartInstance.destroy();
       if (rainChartInstance) rainChartInstance.destroy();
+      document.getElementById('tempChart').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
       const now = new Date();
-      const yesterdayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1));
-      const startLast12 = new Date(Date.UTC(yesterdayUtc.getUTCFullYear(), yesterdayUtc.getUTCMonth() - 11, 1));
-      const startLast12Str = toIsoDateUTC(startLast12);
-      const endLast12Str = toIsoDateUTC(yesterdayUtc);
+      const currentYear = now.getUTCFullYear();
+      const years = [currentYear - 2, currentYear - 1, currentYear];
+      const startStr = `${years[0]}-01-01`;
+      const endStr = `${years[2]}-12-31`;
 
       try {
         const [currentDaily, climateDaily] = await Promise.all([
-          fetchOpenMeteoDaily(selectedLat, selectedLon, startLast12Str, endLast12Str),
+          fetchOpenMeteoDaily(selectedLat, selectedLon, startStr, endStr),
           fetchOpenMeteoDaily(selectedLat, selectedLon, '1961-01-01', '1990-12-31')
         ]);
 
-        const current = monthlyPointsFromLast12Months(currentDaily, yesterdayUtc);
+        const current = monthlyPointsByYear(currentDaily, years);
         const climate = climateMean1961To1990FromDaily(climateDaily);
-
-        const climateTempForRange = climateForMonthEntries(climate.tempMonthlyMean, current.monthEntries);
-        const climateRainForRange = climateForMonthEntries(climate.rainMonthlyMeanTotal, current.monthEntries);
-
-        const curTempMean = mean(current.tempMonthlyMean);
+        const climateTempForRange = climate.tempMonthlyMean;
+        const climateRainForRange = climate.rainMonthlyMeanTotal;
+        const curTempMean = mean(current.tempByYear.flat());
         const climateTempMean = mean(climateTempForRange);
         const tempDelta = (Number.isFinite(climateTempMean) && Number.isFinite(curTempMean)) ? (curTempMean - climateTempMean) : null;
 
-        const curRainMean = mean(current.rainMonthlyTotal);
+        const curRainMean = mean(current.rainByYear.flat());
         const climateRainMean = mean(climateRainForRange);
         const rainDeltaPercent = (Number.isFinite(climateRainMean) && climateRainMean !== 0 && Number.isFinite(curRainMean)) ? ((curRainMean - climateRainMean) / climateRainMean) * 100 : null;
 
-        metrics.textContent = `Comparing last 12 months (${startLast12Str} to ${endLast12Str}) with the 1961-1990 monthly mean for the same months.`;
+        metrics.textContent = `Comparing full years ${years[0]}, ${years[1]}, ${years[2]} (January to December; includes last 24+ months) with the 1961-1990 monthly mean.`;
         document.getElementById('tempYearDelta').textContent = tempDelta === null
           ? 'Mean Δ unavailable'
           : `Mean Δ: ${tempDelta >= 0 ? '+' : ''}${tempDelta.toFixed(2)} °C`;
@@ -297,31 +284,36 @@
           ? 'Mean Δ unavailable'
           : `Mean Δ: ${rainDeltaPercent >= 0 ? '+' : ''}${rainDeltaPercent.toFixed(1)} %`;
 
-        const tempBounds = computeAxisBounds([current.tempMonthlyMean, climateTempForRange]);
-        const rainBounds = computeAxisBounds([current.rainMonthlyTotal, climateRainForRange]);
+        const tempBounds = computeAxisBounds([...current.tempByYear, climateTempForRange]);
+        const rainBounds = computeAxisBounds([...current.rainByYear, climateRainForRange]);
+        const colors = ['#3a86ff', '#ff006e', '#fb5607'];
 
         tempChartInstance = new Chart(document.getElementById('tempChart'), {
           type: 'line',
           data: {
-            labels: current.labels,
+            labels: monthLabels(),
             datasets: [
-              { label: '1961-1990 monthly mean (Open-Meteo)', data: climateTempForRange, borderColor: '#457b9d', tension: .2 },
-              { label: 'Last 12 months monthly mean (Open-Meteo)', data: current.tempMonthlyMean, borderColor: '#e76f51', tension: .2 }
+              { label: `${years[2]} monthly mean (Open-Meteo)`, data: current.tempByYear[2], borderColor: colors[0], tension: .2 },
+              { label: `${years[1]} monthly mean (Open-Meteo)`, data: current.tempByYear[1], borderColor: colors[1], tension: .2 },
+              { label: `${years[0]} monthly mean (Open-Meteo)`, data: current.tempByYear[0], borderColor: colors[2], tension: .2 },
+              { label: '1961-1990 monthly mean (Open-Meteo)', data: climateTempForRange, borderColor: '#457b9d', borderDash: [5, 5], tension: .2 }
             ]
           },
-          options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'Temperature: Last 12 Months vs 1961-1990 Mean' } }, scales: { y: { min: tempBounds?.min, max: tempBounds?.max, title: { display: true, text: '°C' } } } }
+          options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: `🌡️ Temperature: ${years[0]}-${years[2]} (Jan-Dec)` } }, scales: { y: { min: tempBounds?.min, max: tempBounds?.max, title: { display: true, text: '°C' } } } }
         });
 
         rainChartInstance = new Chart(document.getElementById('rainChart'), {
           type: 'line',
           data: {
-            labels: current.labels,
+            labels: monthLabels(),
             datasets: [
-              { label: '1961-1990 monthly rainfall mean (Open-Meteo)', data: climateRainForRange, borderColor: '#264653', tension: .2 },
-              { label: 'Last 12 months monthly rainfall total (Open-Meteo)', data: current.rainMonthlyTotal, borderColor: '#2a9d8f', tension: .2 }
+              { label: `${years[2]} monthly precipitation total (Open-Meteo)`, data: current.rainByYear[2], borderColor: colors[0], tension: .2 },
+              { label: `${years[1]} monthly precipitation total (Open-Meteo)`, data: current.rainByYear[1], borderColor: colors[1], tension: .2 },
+              { label: `${years[0]} monthly precipitation total (Open-Meteo)`, data: current.rainByYear[0], borderColor: colors[2], tension: .2 },
+              { label: '1961-1990 monthly precipitation mean (Open-Meteo)', data: climateRainForRange, borderColor: '#264653', borderDash: [5, 5], tension: .2 }
             ]
           },
-          options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'Rainfall: Last 12 Months vs 1961-1990 Mean' } }, scales: { y: { min: rainBounds?.min, max: rainBounds?.max, title: { display: true, text: 'mm' } } } }
+          options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: `💧 Precipitation: ${years[0]}-${years[2]} (Jan-Dec)` } }, scales: { y: { min: rainBounds?.min, max: rainBounds?.max, title: { display: true, text: 'mm' } } } }
         });
       } catch (e) {
         document.getElementById('result').textContent = `Error: ${e.message}`;
