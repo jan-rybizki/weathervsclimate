@@ -11,6 +11,10 @@
     #map { height: 420px; margin-top: 1rem; border-radius: 8px; }
     #result { margin-top: 1rem; }
     #metrics { margin: 1rem 0; font-weight: 600; }
+    .range-controls { margin: .75rem 0 1rem; padding: .6rem .8rem; border: 1px solid #ddd; border-radius: 8px; }
+    .range-item { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin: .35rem 0; }
+    .range-item label { display: flex; align-items: center; gap: .4rem; font-weight: 600; }
+    .range-metrics { color: #1d3557; font-size: .95rem; }
     .chart-block { margin-top: 1.25rem; }
     .chart-header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: .35rem; }
     .chart-delta { font-weight: 600; color: #1d3557; }
@@ -32,6 +36,17 @@
   <div id="map"></div>
   <div id="result"></div>
   <div id="metrics"></div>
+
+  <div class="range-controls">
+    <div class="range-item">
+      <label><input type="checkbox" id="toggleRecent12" checked> Letzte 12 Monate anzeigen</label>
+      <span id="recent12Metrics" class="range-metrics">Δ zum Langzeitmittel: –</span>
+    </div>
+    <div class="range-item">
+      <label><input type="checkbox" id="togglePrev12" checked> 12–24 Monate zurück anzeigen</label>
+      <span id="prev12Metrics" class="range-metrics">Δ zum Langzeitmittel: –</span>
+    </div>
+  </div>
 
   <div class="chart-block">
     <div class="chart-header">
@@ -198,38 +213,53 @@
 
 
 
-    function monthlyPointsByYear(daily, years) {
-      const tempSums = new Map();
-      const tempCounts = new Map();
-      const rainSums = new Map();
-
+    function buildLast24MonthlySeries(daily) {
+      const buckets = new Map();
       daily.time.forEach((dateStr, i) => {
-        const year = Number(dateStr.slice(0, 4));
-        const month = Number(dateStr.slice(5, 7)) - 1;
-        const key = `${year}-${month}`;
-
+        const key = dateStr.slice(0, 7); // YYYY-MM
         const t = daily.temperature_2m_mean[i];
-        if (Number.isFinite(t)) {
-          tempSums.set(key, (tempSums.get(key) || 0) + t);
-          tempCounts.set(key, (tempCounts.get(key) || 0) + 1);
-        }
-
         const p = daily.precipitation_sum[i];
-        if (Number.isFinite(p)) rainSums.set(key, (rainSums.get(key) || 0) + p);
+        const b = buckets.get(key) || { tempSum: 0, tempCount: 0, rainSum: 0 };
+        if (Number.isFinite(t)) { b.tempSum += t; b.tempCount += 1; }
+        if (Number.isFinite(p)) { b.rainSum += p; }
+        buckets.set(key, b);
       });
+      const months = [...buckets.keys()].sort();
+      const last24 = months.slice(-24);
+      return {
+        keys: last24,
+        labels: last24.map((k) => {
+          const [y, m] = k.split('-');
+          return `${m}/${String(y).slice(2)}`;
+        }),
+        temp: last24.map((k) => {
+          const b = buckets.get(k);
+          return b && b.tempCount ? Number((b.tempSum / b.tempCount).toFixed(2)) : null;
+        }),
+        rain: last24.map((k) => {
+          const b = buckets.get(k);
+          return b ? Number(b.rainSum.toFixed(2)) : null;
+        })
+      };
+    }
 
-      const tempByYear = years.map((year) => new Array(12).fill(null).map((_, month) => {
-        const key = `${year}-${month}`;
-        const c = tempCounts.get(key) || 0;
-        return c ? Number((tempSums.get(key) / c).toFixed(2)) : null;
-      }));
-      const rainByYear = years.map((year) => new Array(12).fill(null).map((_, month) => {
-        const key = `${year}-${month}`;
-        const v = rainSums.get(key);
-        return Number.isFinite(v) ? Number(v.toFixed(2)) : null;
-      }));
+    function climateSeriesForMonths(monthKeys, climateMonthly) {
+      return monthKeys.map((k) => {
+        const monthIdx = Number(k.slice(5, 7)) - 1;
+        return climateMonthly[monthIdx] ?? null;
+      });
+    }
 
-      return { labels: monthLabels(), tempByYear, rainByYear };
+    function meanDelta(series, baseline) {
+      const diffs = series.map((v, i) => Number.isFinite(v) && Number.isFinite(baseline[i]) ? v - baseline[i] : null).filter(Number.isFinite);
+      return diffs.length ? mean(diffs) : null;
+    }
+
+    function percentDelta(series, baseline) {
+      const s = mean(series);
+      const b = mean(baseline);
+      if (!Number.isFinite(s) || !Number.isFinite(b) || b === 0) return null;
+      return ((s - b) / b) * 100;
     }
 
     function computeAxisBounds(seriesList, padRatio = 0.08) {
@@ -245,6 +275,7 @@
       const pad = span * padRatio;
       return { min: Number((min - pad).toFixed(2)), max: Number((max + pad).toFixed(2)) };
     }
+
     async function runComparison() {
       const metrics = document.getElementById('metrics');
       metrics.textContent = '';
@@ -253,10 +284,9 @@
       document.getElementById('tempChart').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
       const now = new Date();
-      const currentYear = now.getUTCFullYear();
-      const years = [currentYear - 2, currentYear - 1, currentYear];
-      const startStr = `${years[0]}-01-01`;
       const endStr = toIsoDateUTC(now);
+      const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 24, 1));
+      const startStr = toIsoDateUTC(start);
 
       try {
         const [currentDaily, climateDaily] = await Promise.all([
@@ -264,62 +294,57 @@
           fetchOpenMeteoDaily(selectedLat, selectedLon, '1961-01-01', '1990-12-31')
         ]);
 
-        const current = monthlyPointsByYear(currentDaily, years);
+        const current = buildLast24MonthlySeries(currentDaily);
         const climate = climateMean1961To1990FromDaily(climateDaily);
-        const climateTempForRange = climate.tempMonthlyMean;
-        const climateRainForRange = climate.rainMonthlyMeanTotal;
-        const curTempMean = mean(current.tempByYear.flat());
-        const climateTempMean = mean(climateTempForRange);
-        const tempDelta = (Number.isFinite(climateTempMean) && Number.isFinite(curTempMean)) ? (curTempMean - climateTempMean) : null;
+        const climateTemp = climateSeriesForMonths(current.keys, climate.tempMonthlyMean);
+        const climateRain = climateSeriesForMonths(current.keys, climate.rainMonthlyMeanTotal);
 
-        const curRainMean = mean(current.rainByYear.flat());
-        const climateRainMean = mean(climateRainForRange);
-        const rainDeltaPercent = (Number.isFinite(climateRainMean) && climateRainMean !== 0 && Number.isFinite(curRainMean)) ? ((curRainMean - climateRainMean) / climateRainMean) * 100 : null;
+        const recentRange = { from: Math.max(current.keys.length - 12, 0), to: current.keys.length };
+        const prevRange = { from: Math.max(current.keys.length - 24, 0), to: Math.max(current.keys.length - 12, 0) };
 
-        metrics.textContent = `Comparing ${years[0]}-01-01 to ${endStr} with the 1961-1990 monthly mean (same coordinates).`;
-        document.getElementById('tempYearDelta').textContent = tempDelta === null
-          ? 'Mean Δ unavailable'
-          : `Mean Δ: ${tempDelta >= 0 ? '+' : ''}${tempDelta.toFixed(2)} °C`;
-        document.getElementById('rainYearDelta').textContent = rainDeltaPercent === null
-          ? 'Mean Δ unavailable'
-          : `Mean Δ: ${rainDeltaPercent >= 0 ? '+' : ''}${rainDeltaPercent.toFixed(1)} %`;
+        function sliceRange(arr, r) { return arr.slice(r.from, r.to); }
 
-        const tempBounds = computeAxisBounds([...current.tempByYear, climateTempForRange]);
-        const rainBounds = computeAxisBounds([...current.rainByYear, climateRainForRange]);
-        const colors = ['#3a86ff', '#ff006e', '#fb5607'];
+        const recentTempDelta = meanDelta(sliceRange(current.temp, recentRange), sliceRange(climateTemp, recentRange));
+        const recentRainDelta = percentDelta(sliceRange(current.rain, recentRange), sliceRange(climateRain, recentRange));
+        const prevTempDelta = meanDelta(sliceRange(current.temp, prevRange), sliceRange(climateTemp, prevRange));
+        const prevRainDelta = percentDelta(sliceRange(current.rain, prevRange), sliceRange(climateRain, prevRange));
 
-        tempChartInstance = new Chart(document.getElementById('tempChart'), {
-          type: 'line',
-          data: {
-            labels: monthLabels(),
-            datasets: [
-              { label: `${years[2]} monthly mean (Open-Meteo)`, data: current.tempByYear[2], borderColor: colors[0], tension: .2 },
-              { label: `${years[1]} monthly mean (Open-Meteo)`, data: current.tempByYear[1], borderColor: colors[1], tension: .2 },
-              { label: `${years[0]} monthly mean (Open-Meteo)`, data: current.tempByYear[0], borderColor: colors[2], tension: .2 },
-              { label: '1961-1990 monthly mean (Open-Meteo)', data: climateTempForRange, borderColor: '#457b9d', borderDash: [5, 5], tension: .2 }
-            ]
-          },
-          options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: `🌡️ Temperature: ${years[0]}-${years[2]} (Jan-Dec)` } }, scales: { y: { min: tempBounds?.min, max: tempBounds?.max, title: { display: true, text: '°C' } } } }
-        });
+        document.getElementById('recent12Metrics').textContent = `ΔT: ${recentTempDelta===null?'–':`${recentTempDelta>=0?'+':''}${recentTempDelta.toFixed(2)} °C`} | ΔN: ${recentRainDelta===null?'–':`${recentRainDelta>=0?'+':''}${recentRainDelta.toFixed(1)} %`}`;
+        document.getElementById('prev12Metrics').textContent = `ΔT: ${prevTempDelta===null?'–':`${prevTempDelta>=0?'+':''}${prevTempDelta.toFixed(2)} °C`} | ΔN: ${prevRainDelta===null?'–':`${prevRainDelta>=0?'+':''}${prevRainDelta.toFixed(1)} %`}`;
 
-        rainChartInstance = new Chart(document.getElementById('rainChart'), {
-          type: 'line',
-          data: {
-            labels: monthLabels(),
-            datasets: [
-              { label: `${years[2]} monthly precipitation total (Open-Meteo)`, data: current.rainByYear[2], borderColor: colors[0], tension: .2 },
-              { label: `${years[1]} monthly precipitation total (Open-Meteo)`, data: current.rainByYear[1], borderColor: colors[1], tension: .2 },
-              { label: `${years[0]} monthly precipitation total (Open-Meteo)`, data: current.rainByYear[0], borderColor: colors[2], tension: .2 },
-              { label: '1961-1990 monthly precipitation mean (Open-Meteo)', data: climateRainForRange, borderColor: '#264653', borderDash: [5, 5], tension: .2 }
-            ]
-          },
-          options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: `💧 Precipitation: ${years[0]}-${years[2]} (Jan-Dec)` } }, scales: { y: { min: rainBounds?.min, max: rainBounds?.max, title: { display: true, text: 'mm' } } } }
-        });
+        metrics.textContent = `Vergleich für ${startStr} bis ${endStr} mit dem Langzeitmittel 1961-1990 (gleiche Koordinaten).`;
+
+        const showRecent = document.getElementById('toggleRecent12').checked;
+        const showPrev = document.getElementById('togglePrev12').checked;
+
+        const tempDatasets = [];
+        const rainDatasets = [];
+        if (showRecent) {
+          tempDatasets.push({ label: 'Letzte 12 Monate Temperatur', data: current.temp.map((v,i)=> i>=recentRange.from ? v : null), borderColor: '#3a86ff', tension:.2 });
+          rainDatasets.push({ label: 'Letzte 12 Monate Niederschlag', data: current.rain.map((v,i)=> i>=recentRange.from ? v : null), borderColor: '#3a86ff', tension:.2 });
+        }
+        if (showPrev) {
+          tempDatasets.push({ label: '12-24 Monate zurück Temperatur', data: current.temp.map((v,i)=> (i>=prevRange.from && i<prevRange.to) ? v : null), borderColor: '#ff006e', tension:.2 });
+          rainDatasets.push({ label: '12-24 Monate zurück Niederschlag', data: current.rain.map((v,i)=> (i>=prevRange.from && i<prevRange.to) ? v : null), borderColor: '#ff006e', tension:.2 });
+        }
+        tempDatasets.push({ label: '1961-1990 Monatsmittel (zugeordnet)', data: climateTemp, borderColor: '#457b9d', borderDash:[5,5], tension:.2 });
+        rainDatasets.push({ label: '1961-1990 Niederschlagsmittel (zugeordnet)', data: climateRain, borderColor: '#264653', borderDash:[5,5], tension:.2 });
+
+        const tempBounds = computeAxisBounds([current.temp, climateTemp]);
+        const rainBounds = computeAxisBounds([current.rain, climateRain]);
+
+        tempChartInstance = new Chart(document.getElementById('tempChart'), { type:'line', data:{ labels: current.labels, datasets: tempDatasets }, options:{ responsive:true, maintainAspectRatio:false, plugins:{ title:{display:true, text:'🌡️ Temperatur: letzte 24 Monate'} }, scales:{ y:{ min:tempBounds?.min, max:tempBounds?.max, title:{display:true,text:'°C'} } } } });
+        rainChartInstance = new Chart(document.getElementById('rainChart'), { type:'line', data:{ labels: current.labels, datasets: rainDatasets }, options:{ responsive:true, maintainAspectRatio:false, plugins:{ title:{display:true, text:'💧 Niederschlag: letzte 24 Monate'} }, scales:{ y:{ min:rainBounds?.min, max:rainBounds?.max, title:{display:true,text:'mm'} } } } });
+
+        document.getElementById('tempYearDelta').textContent = recentTempDelta===null ? 'Δ (letzte 12M): –' : `Δ (letzte 12M): ${recentTempDelta>=0?'+':''}${recentTempDelta.toFixed(2)} °C`;
+        document.getElementById('rainYearDelta').textContent = recentRainDelta===null ? 'Δ (letzte 12M): –' : `Δ (letzte 12M): ${recentRainDelta>=0?'+':''}${recentRainDelta.toFixed(1)} %`;
       } catch (e) {
         document.getElementById('result').textContent = `Error: ${e.message}`;
       }
     }
 
+    document.getElementById('toggleRecent12').addEventListener('change', runComparison);
+    document.getElementById('togglePrev12').addEventListener('change', runComparison);
     document.getElementById('use-gps-btn').addEventListener('click', () => {
       if (!navigator.geolocation) return;
       navigator.geolocation.getCurrentPosition(
