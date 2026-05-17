@@ -262,10 +262,10 @@
       return ((s - b) / b) * 100;
     }
 
-    function computeAxisBounds(seriesList, padRatio = 0.08) {
+    function computeAxisBounds(seriesList, padRatio = 0.08, fixedMin = null) {
       const flat = seriesList.flat().filter(Number.isFinite);
       if (!flat.length) return undefined;
-      const min = Math.min(...flat);
+      const min = fixedMin === null ? Math.min(...flat) : fixedMin;
       const max = Math.max(...flat);
       if (min === max) {
         const pad = Math.max(1, Math.abs(min) * padRatio);
@@ -273,7 +273,7 @@
       }
       const span = max - min;
       const pad = span * padRatio;
-      return { min: Number((min - pad).toFixed(2)), max: Number((max + pad).toFixed(2)) };
+      return { min: Number(min.toFixed(2)), max: Number((max + pad).toFixed(2)) };
     }
 
     async function runComparison() {
@@ -330,8 +330,8 @@
         tempDatasets.push({ label: '1961-1990 Monatsmittel (zugeordnet)', data: climateTemp, borderColor: '#457b9d', borderDash:[5,5], tension:.2 });
         rainDatasets.push({ label: '1961-1990 Niederschlagsmittel (zugeordnet)', data: climateRain, borderColor: '#264653', borderDash:[5,5], tension:.2 });
 
-        const tempBounds = computeAxisBounds([current.temp, climateTemp]);
-        const rainBounds = computeAxisBounds([current.rain, climateRain]);
+        const tempBounds = { min: -5, max: 25 };
+        const rainBounds = computeAxisBounds([current.rain, climateRain], 0.08, 0);
 
         tempChartInstance = new Chart(document.getElementById('tempChart'), { type:'line', data:{ labels: current.labels, datasets: tempDatasets }, options:{ responsive:true, maintainAspectRatio:false, plugins:{ title:{display:true, text:'🌡️ Temperatur: letzte 24 Monate'} }, scales:{ y:{ min:tempBounds?.min, max:tempBounds?.max, title:{display:true,text:'°C'} } } } });
         rainChartInstance = new Chart(document.getElementById('rainChart'), { type:'line', data:{ labels: current.labels, datasets: rainDatasets }, options:{ responsive:true, maintainAspectRatio:false, plugins:{ title:{display:true, text:'💧 Niederschlag: letzte 24 Monate'} }, scales:{ y:{ min:rainBounds?.min, max:rainBounds?.max, title:{display:true,text:'mm'} } } } });
