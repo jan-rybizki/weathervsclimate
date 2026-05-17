@@ -19,6 +19,12 @@
     .chart-header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: .35rem; }
     .chart-delta { font-weight: 600; color: #1d3557; }
     canvas { width: 100% !important; height: 420px !important; max-width: 100%; }
+    .ad-banner { margin: 1.5rem 0; padding: 1rem; border: 2px dashed #9aa0a6; border-radius: 10px; background: #f8f9fa; }
+    .ad-banner h2 { margin: 0 0 .5rem 0; font-size: 1.1rem; }
+    .ad-banner small { color: #555; display:block; margin-top:.5rem; }
+    .legal { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #ddd; }
+    .legal h2 { margin-top: 1.4rem; }
+    .legal p, .legal li { line-height: 1.45; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -62,6 +68,48 @@
     </div>
     <canvas id="rainChart"></canvas>
   </div>
+
+
+  <section class="ad-banner" aria-label="Werbebereich">
+    <h2>Werbung</h2>
+    <p>Hier wird ein Werbebanner eingeblendet. Dieser Platzhalter kann später mit Google AdSense befüllt werden.</p>
+    <div id="adsense-placeholder" style="min-height:90px; display:flex; align-items:center; justify-content:center; color:#666; background:#fff; border:1px solid #ddd; border-radius:8px;">
+      Platzhalter für AdSense-Banner (z. B. 728×90 oder responsiv)
+    </div>
+    <small>Hinweis: Aktuell ist kein aktives Werbenetzwerk eingebunden.</small>
+  </section>
+
+  <section class="legal" id="rechtliches">
+    <h2>Datenschutzhinweise</h2>
+    <p>Diese Webseite verarbeitet ausschließlich technisch notwendige Daten für die Anzeige der Inhalte (z. B. angefragte URL, Browsertyp, Zeitpunkt). Es werden auf dieser Seite keine Analyse- oder Tracking-Dienste eingesetzt.</p>
+    <p>Wenn Sie die Standortfunktion nutzen, werden Ihre Koordinaten ausschließlich zur Abfrage von Wetter- und Klimadaten bei Open-Meteo verwendet. Eine eigene dauerhafte Speicherung der Standortdaten durch diese Webseite erfolgt nicht.</p>
+
+    <h2>Hinweis zur Werbung</h2>
+    <p>Diese Webseite enthält einen vorbereiteten Werbeplatz. Sobald ein Werbenetzwerk wie Google AdSense aktiviert wird, können durch den jeweiligen Anbieter personenbezogene Daten verarbeitet und Cookies gesetzt werden.</p>
+    <p>Vor Aktivierung personalisierter Werbung muss ein geeigneter Consent-Mechanismus (Einwilligung) ergänzt werden.</p>
+
+    <h2>Impressum (Platzhalter)</h2>
+    <p>Bitte ergänzen Sie hier Ihre Pflichtangaben, insbesondere:</p>
+    <ul>
+      <li>Name/Firma der verantwortlichen Person oder Gesellschaft</li>
+      <li>Ladungsfähige Anschrift</li>
+      <li>Kontakt (E-Mail, optional Telefon)</li>
+      <li>Ggf. Umsatzsteuer-ID und weitere regulatorische Angaben</li>
+    </ul>
+  </section>
+
+  <!-- Beispiel für spätere AdSense-Einbindung (aktuell deaktiviert):
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX" crossorigin="anonymous"></script>
+  <ins class="adsbygoogle"
+       style="display:block"
+       data-ad-client="ca-pub-XXXXXXXXXXXXXXXX"
+       data-ad-slot="1234567890"
+       data-ad-format="auto"
+       data-full-width-responsive="true"></ins>
+  <script>
+       (adsbygoogle = window.adsbygoogle || []).push({});
+  </script>
+  -->
 
   <script>
     let tempChartInstance = null;
