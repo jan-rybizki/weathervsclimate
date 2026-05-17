@@ -256,7 +256,7 @@
       const currentYear = now.getUTCFullYear();
       const years = [currentYear - 2, currentYear - 1, currentYear];
       const startStr = `${years[0]}-01-01`;
-      const endStr = `${years[2]}-12-31`;
+      const endStr = toIsoDateUTC(now);
 
       try {
         const [currentDaily, climateDaily] = await Promise.all([
@@ -276,7 +276,7 @@
         const climateRainMean = mean(climateRainForRange);
         const rainDeltaPercent = (Number.isFinite(climateRainMean) && climateRainMean !== 0 && Number.isFinite(curRainMean)) ? ((curRainMean - climateRainMean) / climateRainMean) * 100 : null;
 
-        metrics.textContent = `Comparing full years ${years[0]}, ${years[1]}, ${years[2]} (January to December; includes last 24+ months) with the 1961-1990 monthly mean.`;
+        metrics.textContent = `Comparing ${years[0]}-01-01 to ${endStr} with the 1961-1990 monthly mean (same coordinates).`;
         document.getElementById('tempYearDelta').textContent = tempDelta === null
           ? 'Mean Δ unavailable'
           : `Mean Δ: ${tempDelta >= 0 ? '+' : ''}${tempDelta.toFixed(2)} °C`;
