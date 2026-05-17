@@ -285,7 +285,7 @@
 
       const now = new Date();
       const endStr = toIsoDateUTC(now);
-      const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 24, 1));
+      const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 12, 1));
       const startStr = toIsoDateUTC(start);
 
       try {
@@ -312,12 +312,16 @@
         document.getElementById('recent12Metrics').textContent = `ΔT: ${recentTempDelta===null?'–':`${recentTempDelta>=0?'+':''}${recentTempDelta.toFixed(2)} °C`} | ΔN: ${recentRainDelta===null?'–':`${recentRainDelta>=0?'+':''}${recentRainDelta.toFixed(1)} %`}`;
         document.getElementById('prev12Metrics').textContent = `ΔT: ${prevTempDelta===null?'–':`${prevTempDelta>=0?'+':''}${prevTempDelta.toFixed(2)} °C`} | ΔN: ${prevRainDelta===null?'–':`${prevRainDelta>=0?'+':''}${prevRainDelta.toFixed(1)} %`}`;
 
-        metrics.textContent = `Vergleich für ${startStr} bis ${endStr} mit dem Langzeitmittel 1961-1990 (gleiche Koordinaten).`;
+        metrics.textContent = `Vergleich für ${startStr} bis ${endStr} (Standard: letzte 12 Monate) mit dem Langzeitmittel 1961-1990 (gleiche Koordinaten).`;
 
         const showRecent = document.getElementById('toggleRecent12').checked;
         const showPrev = document.getElementById('togglePrev12').checked;
 
-        const labels = monthLabels();
+        const labels = sliceRange(current.keys, recentRange).map((k) => {
+          const d = new Date(`${k}-01T00:00:00Z`);
+          return d.toLocaleString('de-DE', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+        });
+        const currentMonthIndex = labels.length - 1;
         const foldedRecentTemp = sliceRange(current.temp, recentRange);
         const foldedRecentRain = sliceRange(current.rain, recentRange);
         const foldedRecentClimateTemp = sliceRange(climateTemp, recentRange);
@@ -328,8 +332,22 @@
         const tempDatasets = [];
         const rainDatasets = [];
         if (showRecent) {
-          tempDatasets.push({ label: 'Letzte 12 Monate Temperatur', data: foldedRecentTemp, borderColor: '#3a86ff', tension:.2 });
-          rainDatasets.push({ label: 'Letzte 12 Monate Niederschlag', data: foldedRecentRain, borderColor: '#3a86ff', tension:.2 });
+          tempDatasets.push({
+            label: 'Letzte 12 Monate Temperatur',
+            data: foldedRecentTemp,
+            borderColor: '#3a86ff',
+            pointRadius: foldedRecentTemp.map((_, i) => i === currentMonthIndex ? 6 : 3),
+            pointBackgroundColor: foldedRecentTemp.map((_, i) => i === currentMonthIndex ? '#e63946' : '#3a86ff'),
+            tension:.2
+          });
+          rainDatasets.push({
+            label: 'Letzte 12 Monate Niederschlag',
+            data: foldedRecentRain,
+            borderColor: '#3a86ff',
+            pointRadius: foldedRecentRain.map((_, i) => i === currentMonthIndex ? 6 : 3),
+            pointBackgroundColor: foldedRecentRain.map((_, i) => i === currentMonthIndex ? '#e63946' : '#3a86ff'),
+            tension:.2
+          });
         }
         if (showPrev) {
           tempDatasets.push({ label: '12-24 Monate zurück Temperatur', data: foldedPrevTemp, borderColor: '#ff006e', tension:.2 });
