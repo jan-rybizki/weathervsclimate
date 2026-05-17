@@ -285,7 +285,7 @@
 
       const now = new Date();
       const endStr = toIsoDateUTC(now);
-      const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 12, 1));
+      const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 24, 1));
       const startStr = toIsoDateUTC(start);
 
       try {
@@ -312,7 +312,7 @@
         document.getElementById('recent12Metrics').textContent = `ΔT: ${recentTempDelta===null?'–':`${recentTempDelta>=0?'+':''}${recentTempDelta.toFixed(2)} °C`} | ΔN: ${recentRainDelta===null?'–':`${recentRainDelta>=0?'+':''}${recentRainDelta.toFixed(1)} %`}`;
         document.getElementById('prev12Metrics').textContent = `ΔT: ${prevTempDelta===null?'–':`${prevTempDelta>=0?'+':''}${prevTempDelta.toFixed(2)} °C`} | ΔN: ${prevRainDelta===null?'–':`${prevRainDelta>=0?'+':''}${prevRainDelta.toFixed(1)} %`}`;
 
-        metrics.textContent = `Vergleich für ${startStr} bis ${endStr} (Standard: letzte 12 Monate) mit dem Langzeitmittel 1961-1990 (gleiche Koordinaten).`;
+        metrics.textContent = `Vergleich für ${startStr} bis ${endStr} (24 Monate geladen; Anzeige per Checkbox für letzte 12 bzw. 12–24 Monate) mit dem Langzeitmittel 1961-1990 (gleiche Koordinaten).`;
 
         const showRecent = document.getElementById('toggleRecent12').checked;
         const showPrev = document.getElementById('togglePrev12').checked;
